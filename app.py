@@ -37,6 +37,7 @@ from reporting import (
 )
 from reviewer import run_full_review, ReviewResult
 from tracing import flush_langfuse
+from persistence import init_db, save_search, load_search, list_searches
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -283,6 +284,12 @@ if "review_complete" not in st.session_state:
 
 if "scout_mode" not in st.session_state:
     st.session_state.scout_mode = "portfolio"
+
+if "current_search_id" not in st.session_state:
+    st.session_state.current_search_id = None
+
+# Initialize SQLite database (creates tables if they don't exist)
+init_db()
 
 
 # ---------------------------------------------------------------------------
@@ -806,6 +813,24 @@ if search_button:
             except Exception as e:
                 status.update(label=f"⚠️ Review failed: {e}", state="error")
                 st.warning(f"Review error (results still available): {e}")
+    
+    # ── STEP 4: Save to SQLite for persistence ─────────────────────────────
+    if st.session_state.scoring_complete and st.session_state.scored_companies:
+        try:
+            search_id = save_search(
+                scout_mode=scout_mode,
+                benchmark_label=benchmark_label,
+                location=location if scout_mode != "inbound" else "N/A",
+                criteria=selected_criteria,
+                sources=custom_sources if scout_mode != "inbound" else [],
+                exclusions=all_exclusions if scout_mode != "inbound" else [],
+                search_results=st.session_state.search_results,
+                scored_companies=st.session_state.scored_companies,
+            )
+            st.session_state.current_search_id = search_id
+            st.toast(f"💾 Results saved (ID: {search_id})")
+        except Exception as e:
+            logger.warning(f"Failed to save search: {e}")
 
     # Flush Langfuse observability events
     flush_langfuse()
