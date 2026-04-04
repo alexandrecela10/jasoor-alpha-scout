@@ -18,11 +18,19 @@ Functions:
 
 import re
 import logging
+import requests
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple
 from urllib.parse import urlparse
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+# HTTP request settings for website verification
+HTTP_TIMEOUT = 10  # seconds
+HTTP_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+}
 
 
 @dataclass
@@ -464,3 +472,327 @@ def compute_grounding_score(evidence_map: Dict[str, GroundedEvidence]) -> float:
         weighted_score += weight * evidence.confidence
     
     return weighted_score / total_weight if total_weight > 0 else 0.0
+
+
+# ---------------------------------------------------------------------------
+# Website Verification via HTTP Fetch
+# ---------------------------------------------------------------------------
+# This actually visits the website to verify it exists and contains the
+# company name. Prevents hallucinated websites from passing validation.
+
+def verify_website_exists(url: str) -> Tuple[bool, int, str]:
+    """
+    Actually fetch the website to verify it exists.
+    
+    Returns:
+        (exists: bool, status_code: int, error_message: str)
+    
+    Why this matters:
+    - LLM might hallucinate a plausible-looking URL like "companyname.com"
+    - Without fetching, we can't know if it's real
+    - This adds ~1-2 seconds per company but catches fake websites
+    """
+    if not url or url == "Not Found":
+        return (False, 0, "No URL provided")
+    
+    # Ensure URL has scheme
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    
+    try:
+        response = requests.head(
+            url,
+            timeout=HTTP_TIMEOUT,
+            headers=HTTP_HEADERS,
+            allow_redirects=True,
+        )
+        # 2xx and 3xx are success
+        if response.status_code < 400:
+            return (True, response.status_code, "")
+        else:
+            return (False, response.status_code, f"HTTP {response.status_code}")
+    except requests.exceptions.Timeout:
+        return (False, 0, "Timeout")
+    except requests.exceptions.ConnectionError:
+        return (False, 0, "Connection failed - site may not exist")
+    except requests.exceptions.SSLError:
+        return (False, 0, "SSL error")
+    except Exception as e:
+        return (False, 0, str(e)[:100])
+
+
+def verify_website_contains_company(
+    url: str,
+    company_name: str,
+) -> Tuple[bool, float, str, str]:
+    """
+    Fetch website content and verify it mentions the company name.
+    
+    This is the "human way" of clicking a link and checking if it's right.
+    
+    Returns:
+        (verified: bool, confidence: float, matched_text: str, page_title: str)
+    
+    Why this matters:
+    - A website might exist but be unrelated to the company
+    - e.g., "acme.com" exists but isn't "Acme AI Startup"
+    - We fetch the page and look for the company name in content
+    """
+    if not url or url == "Not Found":
+        return (False, 0.0, "", "")
+    
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    
+    try:
+        response = requests.get(
+            url,
+            timeout=HTTP_TIMEOUT,
+            headers=HTTP_HEADERS,
+            allow_redirects=True,
+        )
+        
+        if response.status_code >= 400:
+            return (False, 0.0, "", f"HTTP {response.status_code}")
+        
+        # Get page content (limit to first 50KB to avoid huge pages)
+        content = response.text[:50000].lower()
+        
+        # Extract title if present
+        title_match = re.search(r'<title[^>]*>([^<]+)</title>', content, re.IGNORECASE)
+        page_title = title_match.group(1).strip() if title_match else ""
+        
+        # Clean company name for matching
+        company_clean = company_name.lower().strip()
+        company_words = [w for w in company_clean.split() if len(w) >= 3]
+        
+        # Check 1: Full company name in content
+        if company_clean in content:
+            return (True, 1.0, company_clean, page_title)
+        
+        # Check 2: Full company name in title
+        if company_clean in page_title.lower():
+            return (True, 0.95, company_clean, page_title)
+        
+        # Check 3: First significant word in title or content
+        if company_words:
+            first_word = company_words[0]
+            if first_word in page_title.lower():
+                return (True, 0.8, first_word, page_title)
+            if first_word in content:
+                return (True, 0.7, first_word, page_title)
+        
+        # Check 4: Multiple words match
+        matches = sum(1 for w in company_words if w in content)
+        if matches >= 2:
+            return (True, 0.6, f"{matches} words matched", page_title)
+        
+        # No match - website exists but doesn't seem related
+        return (False, 0.0, "", page_title)
+        
+    except requests.exceptions.Timeout:
+        return (False, 0.0, "", "Timeout")
+    except requests.exceptions.ConnectionError:
+        return (False, 0.0, "", "Connection failed")
+    except Exception as e:
+        return (False, 0.0, "", str(e)[:50])
+
+
+def verify_source_content(
+    source_url: str,
+    expected_text: str,
+) -> Tuple[bool, float, str]:
+    """
+    Fetch the actual source URL and verify the expected text is present.
+    
+    This is the "click the link and see" verification.
+    
+    Returns:
+        (verified: bool, confidence: float, matched_snippet: str)
+    """
+    if not source_url or not expected_text:
+        return (False, 0.0, "")
+    
+    try:
+        response = requests.get(
+            source_url,
+            timeout=HTTP_TIMEOUT,
+            headers=HTTP_HEADERS,
+            allow_redirects=True,
+        )
+        
+        if response.status_code >= 400:
+            return (False, 0.0, f"HTTP {response.status_code}")
+        
+        content = response.text[:100000].lower()  # First 100KB
+        expected_lower = expected_text.lower().strip()
+        
+        # Exact match
+        if expected_lower in content:
+            # Find position and extract context
+            pos = content.find(expected_lower)
+            start = max(0, pos - 30)
+            end = min(len(content), pos + len(expected_lower) + 30)
+            snippet = content[start:end]
+            return (True, 1.0, snippet)
+        
+        # Partial match - check key words
+        words = [w for w in expected_lower.split() if len(w) >= 4]
+        matches = sum(1 for w in words if w in content)
+        if words and matches >= len(words) * 0.5:
+            return (True, 0.6, f"{matches}/{len(words)} key words found")
+        
+        return (False, 0.0, "Text not found in source")
+        
+    except Exception as e:
+        return (False, 0.0, str(e)[:50])
+
+
+@dataclass
+class WebsiteVerification:
+    """Result of website verification via HTTP fetch."""
+    url: str
+    exists: bool = False
+    status_code: int = 0
+    contains_company: bool = False
+    company_match_confidence: float = 0.0
+    matched_text: str = ""
+    page_title: str = ""
+    error: str = ""
+    verified_at: str = ""
+    
+    def to_dict(self) -> Dict:
+        return {
+            "url": self.url,
+            "exists": self.exists,
+            "status_code": self.status_code,
+            "contains_company": self.contains_company,
+            "company_match_confidence": self.company_match_confidence,
+            "matched_text": self.matched_text,
+            "page_title": self.page_title,
+            "error": self.error,
+            "verified_at": self.verified_at,
+        }
+
+
+def full_website_verification(
+    url: str,
+    company_name: str,
+) -> WebsiteVerification:
+    """
+    Complete website verification: exists + contains company name.
+    
+    This is the definitive check that prevents hallucinated websites.
+    """
+    result = WebsiteVerification(
+        url=url,
+        verified_at=datetime.now().isoformat(),
+    )
+    
+    # Step 1: Check if website exists
+    exists, status_code, error = verify_website_exists(url)
+    result.exists = exists
+    result.status_code = status_code
+    
+    if not exists:
+        result.error = error
+        return result
+    
+    # Step 2: Check if website mentions company
+    contains, confidence, matched, title = verify_website_contains_company(url, company_name)
+    result.contains_company = contains
+    result.company_match_confidence = confidence
+    result.matched_text = matched
+    result.page_title = title
+    
+    if not contains:
+        result.error = f"Website exists but doesn't mention '{company_name}'"
+    
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Source Date Filtering
+# ---------------------------------------------------------------------------
+
+def parse_source_date(date_str: str) -> Optional[datetime]:
+    """
+    Parse various date formats from source metadata.
+    
+    Tavily and other sources return dates in different formats.
+    """
+    if not date_str:
+        return None
+    
+    formats = [
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%d",
+        "%d %b %Y",
+        "%B %d, %Y",
+        "%d/%m/%Y",
+        "%m/%d/%Y",
+    ]
+    
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str[:19], fmt)
+        except ValueError:
+            continue
+    
+    return None
+
+
+def is_source_recent(
+    date_str: str,
+    max_age_days: int = 14,
+) -> Tuple[bool, Optional[datetime], int]:
+    """
+    Check if a source is within the allowed age.
+    
+    Returns:
+        (is_recent: bool, parsed_date: datetime or None, age_days: int)
+    
+    Default: 14 days (2 weeks)
+    """
+    parsed = parse_source_date(date_str)
+    
+    if not parsed:
+        # Can't determine date - assume it's okay but flag it
+        return (True, None, -1)
+    
+    age = datetime.now() - parsed
+    age_days = age.days
+    
+    return (age_days <= max_age_days, parsed, age_days)
+
+
+def filter_sources_by_date(
+    sources: List[Dict],
+    max_age_days: int = 14,
+    date_field: str = "published_date",
+) -> Tuple[List[Dict], List[Dict]]:
+    """
+    Filter sources to only include recent ones.
+    
+    Returns:
+        (recent_sources, filtered_out_sources)
+    """
+    recent = []
+    old = []
+    
+    for source in sources:
+        date_str = source.get(date_field, "")
+        is_recent, parsed, age = is_source_recent(date_str, max_age_days)
+        
+        # Add age metadata
+        source["_parsed_date"] = parsed.isoformat() if parsed else None
+        source["_age_days"] = age
+        source["_is_recent"] = is_recent
+        
+        if is_recent:
+            recent.append(source)
+        else:
+            old.append(source)
+    
+    return recent, old

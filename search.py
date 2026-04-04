@@ -13,11 +13,11 @@ extract a field from the source, it returns "Not Found" (not a guess).
 
 import os
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict, Union
 
 from tavily import TavilyClient
 
-from models import SearchResult
+from models import SearchResult, CompanyProfile
 from config import PORTFOLIO_COMPANIES, DEFAULT_SOURCES, DEFAULT_EXCLUSIONS
 from llm_client import call_gemini, parse_json_response
 from tracing import create_trace, get_langfuse
@@ -109,13 +109,17 @@ def _get_tavily_client() -> TavilyClient:
 
 
 def build_search_query(
-    seed_company: str,
+    seed: Union[str, CompanyProfile, Dict],
     criteria: List[str] = None,
     location: str = None,
-    custom_attrs: dict = None,
 ) -> str:
     """
     Build a search query from the seed company's 6 structured attributes.
+    
+    REUSABLE: Accepts either:
+    - str: Company name (looks up in PORTFOLIO_COMPANIES for backward compat)
+    - CompanyProfile: Direct profile object (for due diligence, portfolio augmentation)
+    - dict: Raw attributes dict (for UI-edited values)
 
     The 6 attributes are:
     1. problem_statement - What pain point does the company solve?
@@ -131,9 +135,23 @@ def build_search_query(
     Why this format? Tavily works best with natural language queries.
     We include only the criteria the user selected.
     """
-    # Use custom attributes if provided (from UI edits), otherwise use config
-    company_data = custom_attrs if custom_attrs else PORTFOLIO_COMPANIES.get(seed_company, {})
-    query_parts = [f"startups similar to {seed_company}"]
+    # Normalize input to a dict of attributes
+    if isinstance(seed, str):
+        # Backward compat: look up by name in config
+        company_data = PORTFOLIO_COMPANIES.get(seed, {})
+        seed_name = seed
+    elif isinstance(seed, CompanyProfile):
+        # New: accept CompanyProfile directly
+        company_data = seed.to_attrs_dict()
+        seed_name = seed.name
+    elif isinstance(seed, dict):
+        # Dict with attributes (from UI edits)
+        company_data = seed
+        seed_name = seed.get("name", "target company")
+    else:
+        raise ValueError(f"seed must be str, CompanyProfile, or dict, got {type(seed)}")
+    
+    query_parts = [f"startups similar to {seed_name}"]
 
     # Default to all 6 criteria if none specified
     if criteria is None:
@@ -176,46 +194,59 @@ def build_search_query(
 
 
 def search_similar_companies(
-    seed_company: str,
+    seed: Union[str, CompanyProfile, Dict],
     criteria: List[str] = None,
     location: str = None,
     sources: List[str] = None,
     exclusions: List[str] = None,
-    custom_attrs: dict = None,
     max_results: int = 10,
 ) -> List[SearchResult]:
     """
-    Find companies similar to a Jasoor portfolio company.
+    Find companies similar to a seed company.
+    
+    REUSABLE: Accepts either:
+    - str: Company name (looks up in PORTFOLIO_COMPANIES for backward compat)
+    - CompanyProfile: Direct profile object (for due diligence, portfolio augmentation)
+    - dict: Raw attributes dict (for UI-edited values)
 
     Args:
-        seed_company: Name of the seed (e.g., "Byanat AI")
+        seed:         Seed company — name string, CompanyProfile, or attributes dict
         criteria:     Which similarity criteria to use (e.g., ["technology", "location"])
         location:     Override location filter (default: seed company's location)
         sources:      Websites to prioritize (default: DEFAULT_SOURCES)
-        custom_attrs: Custom attributes from UI edits (overrides config)
         exclusions:   Keywords to exclude (e.g., ["raises", "funding round"])
         max_results:  How many companies to return (default: 10)
 
     Returns:
         List of SearchResult objects, each with source_url attached.
     """
+    # Normalize seed to get name for logging/tracing
+    if isinstance(seed, str):
+        seed_name = seed
+    elif isinstance(seed, CompanyProfile):
+        seed_name = seed.name
+    elif isinstance(seed, dict):
+        seed_name = seed.get("name", "target company")
+    else:
+        seed_name = str(seed)
+    
     # Create Langfuse trace for this search operation
     trace = create_trace(
         name="search_similar_companies",
         input_data={
-            "seed_company": seed_company,
+            "seed_company": seed_name,
             "criteria": criteria,
             "location": location,
             "sources": sources,
             "exclusions": exclusions,
             "max_results": max_results,
         },
-        metadata={"seed_company": seed_company},
+        metadata={"seed_company": seed_name},
     )
 
     try:
-        # Step 1: Build the search query using custom attributes if provided
-        query = build_search_query(seed_company, criteria, location, custom_attrs)
+        # Step 1: Build the search query — accepts str, CompanyProfile, or dict
+        query = build_search_query(seed, criteria, location)
         logger.info(f"Search query: {query}")
 
         # Step 2: Call Tavily API
@@ -241,7 +272,7 @@ def search_similar_companies(
         # Step 3: Extract structured data using Gemini
         search_results = _extract_companies_from_results(
             filtered_results,
-            seed_company=seed_company,
+            seed_company=seed_name,
             max_results=max_results,
             criteria=criteria,
             trace=trace,
@@ -440,6 +471,12 @@ Return ONLY the JSON array, no other text."""
             
             # Compute overall grounding score
             grounding_score = compute_grounding_score(evidence_map)
+            
+            # STRICT GROUNDING: Reject companies below minimum threshold
+            MIN_GROUNDING_SCORE = 0.3  # At least 30% of fields must be grounded
+            if grounding_score < MIN_GROUNDING_SCORE:
+                logger.warning(f"GROUNDING SCORE TOO LOW: {company_name} ({grounding_score:.0%}) — skipping")
+                continue
             
             # Convert evidence objects to dicts for storage
             evidence_dict = {k: v.to_dict() for k, v in evidence_map.items()}

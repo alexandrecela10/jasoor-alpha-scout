@@ -312,6 +312,7 @@ def send_email_report(
     scored_companies: List[ScoredCompany],
     top_n: int = 3,
     attach_pdf: bool = True,
+    share_id: str = None,
 ) -> tuple[bool, str]:
     """
     Send the report via email (SMTP).
@@ -320,6 +321,9 @@ def send_email_report(
     
     For Gmail: You need an App Password, not your regular password.
     Go to https://myaccount.google.com/apppasswords to generate one.
+    
+    Args:
+        share_id: Optional share ID to include in email for direct access to results
     
     Returns tuple of (success: bool, message: str)
     """
@@ -347,7 +351,22 @@ def send_email_report(
 
 Companies similar to {seed_company}
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+"""
+        # Include Share ID for direct access
+        if share_id:
+            body += f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔗 QUICK ACCESS: Share ID {share_id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+To view full results in Alpha Scout:
+1. Open Alpha Scout
+2. Go to "Saved Searches" in the sidebar
+3. Enter Share ID: {share_id}
+4. Click "Load"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
 
+        body += f"""
 Top {top_n} Targets:
 """
         for i, company in enumerate(scored_companies[:top_n], 1):

@@ -37,7 +37,12 @@ from reporting import (
 )
 from reviewer import run_full_review, ReviewResult
 from tracing import flush_langfuse
-from persistence import init_db, save_search, load_search, list_searches
+from persistence import (
+    init_db, save_search, load_search, load_search_by_share_id, list_searches, delete_search,
+    add_to_target_list, get_target_list, remove_from_target_list, is_in_target_list,
+    schedule_search, get_scheduled_searches, delete_scheduled_search, toggle_scheduled_search,
+)
+from vc_chat import chat_with_vc_analyst, get_suggested_prompts
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -627,6 +632,121 @@ with st.sidebar:
 
     st.divider()
 
+    # --- Load Previous Search ---
+    with st.expander("📂 Saved Searches", expanded=False):
+        st.caption("*Resume a previous search session*")
+        
+        # Quick load by Share ID (from email link)
+        st.markdown("##### 🔗 Load by Share ID")
+        st.caption("Enter the Share ID from an email alert to load that search directly.")
+        col_input, col_btn = st.columns([3, 1])
+        with col_input:
+            share_id_input = st.text_input(
+                "Share ID",
+                placeholder="e.g., AS-7F3K9X2M",
+                label_visibility="collapsed",
+                key="share_id_input"
+            )
+        with col_btn:
+            if st.button("Load", key="load_by_share_id", use_container_width=True):
+                if share_id_input:
+                    loaded = load_search_by_share_id(share_id_input.strip())
+                    if loaded:
+                        st.session_state.search_results = loaded["search_results"]
+                        st.session_state.scored_companies = loaded["scored_companies"]
+                        st.session_state.scoring_complete = True
+                        st.session_state.current_search_id = loaded["metadata"]["id"]
+                        st.session_state.current_share_id = loaded["metadata"].get("share_id")
+                        st.toast(f"✅ Loaded search: {loaded['metadata']['benchmark_label']}")
+                        st.rerun()
+                    else:
+                        st.error(f"Share ID not found: {share_id_input}")
+                else:
+                    st.warning("Please enter a Share ID")
+        
+        st.divider()
+        st.markdown("##### 📋 Recent Searches")
+        past_searches = list_searches(limit=10)
+        if past_searches:
+            for ps in past_searches:
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    mode_icon = {"portfolio": "📁", "mena_success": "🌟", "inbound": "📥"}.get(ps["scout_mode"], "📋")
+                    share_badge = f"`{ps['share_id']}`" if ps.get('share_id') else ""
+                    st.markdown(f"{mode_icon} **{ps['benchmark_label']}** — {ps['num_results']} results ({ps['grounding_score_avg']:.0%} grounded)")
+                    st.caption(f"{share_badge} | {ps['created_at']}")
+                with col2:
+                    if st.button("Load", key=f"load_{ps['id']}", use_container_width=True):
+                        loaded = load_search(ps["id"])
+                        if loaded:
+                            st.session_state.search_results = loaded["search_results"]
+                            st.session_state.scored_companies = loaded["scored_companies"]
+                            st.session_state.scoring_complete = True
+                            st.session_state.current_search_id = ps["id"]
+                            st.session_state.current_share_id = ps.get("share_id")
+                            st.rerun()
+                with col3:
+                    if st.button("🗑️", key=f"del_search_{ps['id']}", help="Delete search"):
+                        delete_search(ps["id"])
+                        st.toast(f"Deleted search {ps['id']}")
+                        st.rerun()
+        else:
+            st.info("No saved searches yet.")
+
+    st.divider()
+    
+    # --- Scheduled Searches ---
+    with st.expander("📅 Scheduled Searches", expanded=False):
+        st.caption("*Automated searches with email reports*")
+        scheduled = get_scheduled_searches()
+        if scheduled:
+            for ss in scheduled:
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col1:
+                    status_icon = "🟢" if ss["is_active"] else "⏸️"
+                    st.markdown(f"{status_icon} **{ss['name']}**")
+                    st.caption(f"{ss['schedule_time']} {ss['schedule_timezone']} | {ss['schedule_frequency']} | {ss['email_recipient']}")
+                with col2:
+                    if ss["is_active"]:
+                        if st.button("⏸️", key=f"pause_sched_{ss['id']}", help="Pause"):
+                            toggle_scheduled_search(ss["id"], False)
+                            st.rerun()
+                    else:
+                        if st.button("▶️", key=f"resume_sched_{ss['id']}", help="Resume"):
+                            toggle_scheduled_search(ss["id"], True)
+                            st.rerun()
+                with col3:
+                    if st.button("🗑️", key=f"del_sched_{ss['id']}", help="Delete"):
+                        delete_scheduled_search(ss["id"])
+                        st.toast(f"Deleted schedule {ss['id']}")
+                        st.rerun()
+            st.markdown(f"**Total:** {len(scheduled)} scheduled")
+        else:
+            st.info("No scheduled searches. Run a search and schedule it!")
+
+    st.divider()
+    
+    # --- Target List ---
+    with st.expander("🎯 My Target List", expanded=False):
+        st.caption("*Companies you're tracking — news alerts coming soon*")
+        targets = get_target_list()
+        if targets:
+            for t in targets:
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(t["priority"], "⚪")
+                    st.markdown(f"{priority_icon} **{t['name']}** — {t['sector'] or 'N/A'}")
+                    st.caption(f"{t['location'] or 'N/A'} | {t['funding_stage'] or 'N/A'} | Added: {t['added_at'][:10]}")
+                with col2:
+                    if st.button("🗑️", key=f"rm_target_{t['id']}", help="Remove from list"):
+                        remove_from_target_list(t["id"])
+                        st.rerun()
+            st.markdown(f"**Total:** {len(targets)} companies")
+        else:
+            st.info("No targets yet. Add companies from search results.")
+
+    st.divider()
+
     # --- Action Buttons ---
     search_button = st.button("🎯 Scout & Analyze", type="primary", use_container_width=True)
 
@@ -716,13 +836,15 @@ if search_button:
             st.write(f"Benchmark: **{benchmark_label}** | Location: {location}")
             st.write(f"Sources: {', '.join(custom_sources[:3])}...")
             try:
+                # Pass custom_attrs as the seed (dict format) if user edited attributes
+                # Otherwise pass the benchmark_label string for config lookup
+                seed_input = custom_attrs if custom_attrs else benchmark_label
                 results = search_similar_companies(
-                    seed_company=benchmark_label,
+                    seed=seed_input,
                     criteria=selected_criteria,
                     location=location,
                     sources=custom_sources,
                     exclusions=all_exclusions,
-                    custom_attrs=custom_attrs,
                     max_results=max_results,
                 )
                 st.session_state.search_results = results
@@ -817,7 +939,7 @@ if search_button:
     # ── STEP 4: Save to SQLite for persistence ─────────────────────────────
     if st.session_state.scoring_complete and st.session_state.scored_companies:
         try:
-            search_id = save_search(
+            save_result = save_search(
                 scout_mode=scout_mode,
                 benchmark_label=benchmark_label,
                 location=location if scout_mode != "inbound" else "N/A",
@@ -827,8 +949,11 @@ if search_button:
                 search_results=st.session_state.search_results,
                 scored_companies=st.session_state.scored_companies,
             )
-            st.session_state.current_search_id = search_id
-            st.toast(f"💾 Results saved (ID: {search_id})")
+            # save_search now returns {"search_id": int, "share_id": str}
+            st.session_state.current_search_id = save_result["search_id"]
+            st.session_state.current_share_id = save_result["share_id"]
+            st.session_state.show_save_nudge = True
+            st.toast(f"💾 Results saved — Share ID: `{save_result['share_id']}`")
         except Exception as e:
             logger.warning(f"Failed to save search: {e}")
 
@@ -836,9 +961,87 @@ if search_button:
     flush_langfuse()
 
 
+# --- Nudge: Schedule Search ---
+if st.session_state.get("show_save_nudge") and st.session_state.get("current_search_id"):
+    # Display Share ID prominently for email sharing
+    share_id = st.session_state.get("current_share_id")
+    if share_id:
+        st.success(f"🔗 **Share ID: `{share_id}`** — Include this in email alerts so recipients can load results directly.")
+    
+    st.info("💡 **Want daily updates?** Schedule this search to run automatically and receive email reports.")
+    
+    with st.expander("📅 Schedule This Search", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            schedule_name = st.text_input(
+                "Schedule name:",
+                value=f"{benchmark_label} Daily Scout",
+                key="schedule_name",
+            )
+            schedule_email = st.text_input(
+                "Email for reports:",
+                placeholder="analyst@jasoor.vc",
+                key="schedule_email",
+            )
+        
+        with col2:
+            schedule_time = st.time_input(
+                "Run at (UAE time):",
+                value=None,
+                key="schedule_time",
+            )
+            if schedule_time is None:
+                schedule_time_str = "07:00"
+            else:
+                schedule_time_str = schedule_time.strftime("%H:%M")
+            
+            schedule_freq = st.selectbox(
+                "Frequency:",
+                options=["daily", "weekly", "monthly"],
+                index=0,
+                key="schedule_freq",
+            )
+        
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            if st.button("📅 Schedule Search", type="primary", use_container_width=True):
+                if schedule_email:
+                    schedule_search(
+                        search_id=st.session_state.current_search_id,
+                        name=schedule_name,
+                        email_recipient=schedule_email,
+                        schedule_time=schedule_time_str,
+                        schedule_frequency=schedule_freq,
+                    )
+                    st.session_state.show_save_nudge = False
+                    st.success(f"✅ Scheduled! You'll receive reports at {schedule_time_str} UAE time.")
+                    st.rerun()
+                else:
+                    st.warning("Please enter an email address.")
+        
+        with col_b:
+            if st.button("⏭️ Skip", use_container_width=True):
+                st.session_state.show_save_nudge = False
+                st.rerun()
+        
+        with col_c:
+            st.caption(f"Search ID: {st.session_state.current_search_id}")
+
+
 # --- Display Results ---
 if st.session_state.scoring_complete and st.session_state.scored_companies:
     scored_companies: List[ScoredCompany] = st.session_state.scored_companies
+    
+    # STRICT GROUNDING: Show grounding summary banner
+    total_companies = len(scored_companies)
+    grounded_companies = [c for c in scored_companies if getattr(c.search_result, 'grounding_score', 0) >= 0.5]
+    ungrounded_count = total_companies - len(grounded_companies)
+    
+    if ungrounded_count > 0:
+        st.warning(f"⚠️ **Grounding Notice:** {ungrounded_count}/{total_companies} companies have low grounding scores. Only showing verified data — ungrounded scores are nullified.")
+    else:
+        st.success(f"✅ **All {total_companies} companies are well-grounded** — data verified against sources.")
 
     # Tabs for different views
     tab1, tab2, tab3, tab4 = st.tabs(["📊 2x2 Matrix", "📋 Comparison Table", "📝 Detailed Report", "📎 Appendix"])
@@ -912,6 +1115,31 @@ if st.session_state.scoring_complete and st.session_state.scored_companies:
                         disabled=True,
                         use_container_width=True,
                     )
+        
+        # --- Add to Target List ---
+        st.markdown("---")
+        st.markdown("### 🎯 Add to Target List")
+        st.caption("*Save companies to track — news alerts coming soon*")
+        
+        for company in scored_companies:
+            sr = company.search_result
+            already_in_list = is_in_target_list(sr.name)
+            
+            col1, col2, col3 = st.columns([3, 1, 1])
+            with col1:
+                avg_score = sum(s.score for s in company.scores.values() if s.score) / max(len([s for s in company.scores.values() if s.score]), 1)
+                st.markdown(f"**{sr.name}** — {sr.sector} | Avg: {avg_score:.1f}/5")
+            with col2:
+                if already_in_list:
+                    st.success("✓ Saved", icon="✅")
+                else:
+                    if st.button("➕ Add", key=f"add_target_{sr.name}", use_container_width=True):
+                        add_to_target_list(company)
+                        st.toast(f"🎯 Added {sr.name} to target list!")
+                        st.rerun()
+            with col3:
+                if sr.website and sr.website != "Not Found":
+                    st.link_button("🌐", url=sr.website, use_container_width=True)
 
         # ABSOLUTE GROUNDING: Expandable evidence section per company
         st.markdown("---")
@@ -1111,6 +1339,78 @@ if st.session_state.scoring_complete and st.session_state.scored_companies:
 
         else:
             st.info("Review results will appear here after running a search.")
+
+# ---------------------------------------------------------------------------
+# VC Analyst Chat — Only for Target List Companies
+# ---------------------------------------------------------------------------
+
+targets = get_target_list()
+if targets:
+    st.divider()
+    st.markdown("## 🧠 Ask the VC Analyst")
+    st.caption("*Chat with a seasoned AI VC Analyst about your target companies*")
+    
+    # Initialize chat history in session state
+    if "vc_chat_history" not in st.session_state:
+        st.session_state.vc_chat_history = []
+    
+    # Suggested prompts
+    st.markdown("**Quick prompts:**")
+    suggested = get_suggested_prompts()
+    cols = st.columns(3)
+    for i, prompt_data in enumerate(suggested):
+        with cols[i]:
+            if st.button(
+                prompt_data["label"],
+                key=f"suggested_{i}",
+                help=prompt_data["description"],
+                use_container_width=True,
+            ):
+                # Add user message and get response
+                user_msg = prompt_data["prompt"]
+                st.session_state.vc_chat_history.append({"role": "user", "content": user_msg})
+                
+                with st.spinner("🧠 Analyst is thinking..."):
+                    response = chat_with_vc_analyst(
+                        user_message=user_msg,
+                        chat_history=st.session_state.vc_chat_history[:-1],
+                        targets=targets,
+                    )
+                st.session_state.vc_chat_history.append({"role": "assistant", "content": response})
+                st.rerun()
+    
+    # Chat history display
+    if st.session_state.vc_chat_history:
+        st.markdown("---")
+        for msg in st.session_state.vc_chat_history:
+            if msg["role"] == "user":
+                st.markdown(f"**You:** {msg['content']}")
+            else:
+                st.markdown(f"**🧠 VC Analyst:**")
+                st.markdown(msg["content"])
+            st.markdown("")
+    
+    # Chat input
+    st.markdown("---")
+    user_input = st.chat_input("Ask the VC Analyst about your target companies...")
+    
+    if user_input:
+        st.session_state.vc_chat_history.append({"role": "user", "content": user_input})
+        
+        with st.spinner("🧠 Analyst is thinking..."):
+            response = chat_with_vc_analyst(
+                user_message=user_input,
+                chat_history=st.session_state.vc_chat_history[:-1],
+                targets=targets,
+            )
+        st.session_state.vc_chat_history.append({"role": "assistant", "content": response})
+        st.rerun()
+    
+    # Clear chat button
+    if st.session_state.vc_chat_history:
+        if st.button("🗑️ Clear Chat", key="clear_chat"):
+            st.session_state.vc_chat_history = []
+            st.rerun()
 
 else:
     # No results yet — show instructions
