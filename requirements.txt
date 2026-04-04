@@ -1,0 +1,26 @@
+# ============================================================
+# Jasoor Alpha Scout — Python Dependencies
+# ============================================================
+
+# --- UI Framework ---
+streamlit>=1.30.0            # Web app framework (sidebar, widgets, layout)
+
+# --- LLM (Gemini) ---
+google-genai>=1.0.0          # Google Gemini SDK (same as BDC Footnotes)
+
+# --- Observability ---
+langfuse>=2.0.0              # LLM tracing & evaluation dashboard
+
+# --- Search ---
+tavily-python>=0.3.0         # Tavily search API (optimized for LLM research)
+
+# --- Visualization ---
+plotly>=5.18.0               # Interactive scatter plots (2x2 matrix)
+
+# --- Reporting ---
+fpdf2>=2.7.0                 # PDF generation (lightweight, no system deps)
+pandas>=2.0.0                # Data manipulation for Excel export
+openpyxl>=3.1.0              # Excel file writing engine
+
+# --- Utilities ---
+python-dotenv>=1.0.0         # Load .env file into os.environ
