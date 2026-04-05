@@ -17,7 +17,14 @@ Required environment variables:
 
 import os
 import logging
-from langfuse import Langfuse
+
+# Try to import Langfuse - support both old and new SDK versions
+try:
+    from langfuse import get_client  # SDK v4+
+    LANGFUSE_V4 = True
+except ImportError:
+    from langfuse import Langfuse  # SDK v2/v3
+    LANGFUSE_V4 = False
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +33,10 @@ logger = logging.getLogger(__name__)
 # Why a singleton? Creating multiple clients wastes connections and can
 # cause duplicate events. One client batches everything efficiently.
 # ---------------------------------------------------------------------------
-_langfuse_client: Langfuse = None
+_langfuse_client = None
 
 
-def get_langfuse() -> Langfuse:
+def get_langfuse():
     """
     Get or create the Langfuse client singleton.
 
@@ -59,17 +66,22 @@ def get_langfuse() -> Langfuse:
         return None
 
     # Create the client and store it for reuse
-    # flush_at=1 ensures traces are sent immediately (not batched)
-    # This is important for Streamlit Cloud where the process may be short-lived
+    # SDK v4 uses get_client(), SDK v2/v3 uses Langfuse()
     try:
-        _langfuse_client = Langfuse(
-            secret_key=secret_key,
-            public_key=public_key,
-            host=host,
-            flush_at=1,  # Send traces immediately, don't batch
-            flush_interval=1,  # Flush every 1 second
-        )
-        logger.info(f"Langfuse tracing enabled (host={host}, flush_at=1)")
+        if LANGFUSE_V4:
+            # SDK v4+ - uses get_client() which reads from env vars automatically
+            _langfuse_client = get_client()
+            logger.info(f"Langfuse v4 tracing enabled (host={host})")
+        else:
+            # SDK v2/v3 - uses Langfuse() constructor
+            _langfuse_client = Langfuse(
+                secret_key=secret_key,
+                public_key=public_key,
+                host=host,
+                flush_at=1,  # Send traces immediately, don't batch
+                flush_interval=1,  # Flush every 1 second
+            )
+            logger.info(f"Langfuse v2/v3 tracing enabled (host={host}, flush_at=1)")
     except Exception as e:
         logger.error(f"Failed to create Langfuse client: {e}")
         return None
@@ -105,18 +117,28 @@ def create_trace(
         return None
 
     try:
-        # Langfuse SDK v2 uses trace() method
-        # This creates a proper trace that appears in the Langfuse dashboard
-        trace = lf.trace(
-            name=name,
-            input=input_data,
-            metadata=metadata,
-            user_id=user_id,
-            session_id=session_id,
-        )
+        # SDK v4 uses start_observation(), SDK v2/v3 uses trace()
+        trace = None
+        trace_id = None
         
-        # Get the trace ID - in SDK v2, it's available as trace.id
-        trace_id = trace.id if hasattr(trace, 'id') else None
+        if LANGFUSE_V4:
+            # SDK v4+ - use start_observation() to create a trace-level span
+            trace = lf.start_observation(
+                name=name,
+                input=input_data,
+                metadata=metadata,
+            )
+            trace_id = trace.id if hasattr(trace, 'id') else None
+        else:
+            # SDK v2/v3 - use trace() method
+            trace = lf.trace(
+                name=name,
+                input=input_data,
+                metadata=metadata,
+                user_id=user_id,
+                session_id=session_id,
+            )
+            trace_id = trace.id if hasattr(trace, 'id') else None
         
         logger.info(f"Created Langfuse trace: {trace_id} (user={user_id}, session={session_id})")
         
