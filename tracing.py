@@ -105,32 +105,18 @@ def create_trace(
         return None
 
     try:
-        # Try multiple Langfuse API methods for compatibility across SDK versions
-        trace = None
-        trace_id = None
+        # Langfuse SDK v2 uses trace() method
+        # This creates a proper trace that appears in the Langfuse dashboard
+        trace = lf.trace(
+            name=name,
+            input=input_data,
+            metadata=metadata,
+            user_id=user_id,
+            session_id=session_id,
+        )
         
-        # Method 1: SDK v3+ uses start_observation
-        if hasattr(lf, 'start_observation'):
-            trace = lf.start_observation(
-                name=name,
-                input=input_data,
-                metadata=metadata,
-            )
-            trace_id = getattr(trace, 'id', None) or str(id(trace))
-        # Method 2: SDK v2 uses trace()
-        elif hasattr(lf, 'trace'):
-            trace = lf.trace(
-                name=name,
-                input=input_data,
-                metadata=metadata,
-                user_id=user_id,
-                session_id=session_id,
-            )
-            trace_id = getattr(trace, 'id', None)
-        # Method 3: Fallback - just return a dummy wrapper
-        else:
-            logger.warning("Langfuse SDK doesn't have trace() or start_observation() - tracing disabled")
-            return None
+        # Get the trace ID - in SDK v2, it's available as trace.id
+        trace_id = trace.id if hasattr(trace, 'id') else None
         
         logger.info(f"Created Langfuse trace: {trace_id} (user={user_id}, session={session_id})")
         
