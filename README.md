@@ -18,8 +18,8 @@ AI-powered tool that discovers, enriches, and scores early-stage startups in the
   │  search.py   │     │         source_enrichment.py          │     │  scorer.py   │
   │              │     │                                        │     │              │
   │ • Tavily API │     │  ┌─────────────┐  ┌─────────────┐     │     │ • 4 dims     │
-  │ • Gemini     │     │  │  Website    │  │  LinkedIn   │     │     │ • Evidence   │
-  │   extract    │     │  │  Finder     │  │  Finder     │     │     │ • Grounding  │
+  │ • Smart query│     │  │  Website    │  │  LinkedIn   │     │     │ • Evidence   │
+  │ • 2x overfetch│    │  │  Finder     │  │  Finder     │     │     │ • Grounding  │
   └──────────────┘     │  │  Agent      │  │  Agent      │     │     └──────────────┘
                        │  └──────┬──────┘  └──────┬──────┘     │            │
                        │         │                │            │            │
@@ -110,7 +110,8 @@ streamlit run app.py
 ### Key Features
 | Feature | Description |
 |---------|-------------|
-| **Load Previous Search** | Resume analysis from sidebar |
+| **Smart Query** | Bakes eligibility filters (MENA, early-stage, <100 emp) into search query |
+| **2x Overfetch** | Searches for 2x companies to ensure enough pass post-enrichment filters |
 | **Website Finder Agent** | Searches & verifies official company website |
 | **LinkedIn Finder Agent** | Finds LinkedIn page, extracts employees/HQ |
 | **Stage Finder Agent** | Finds funding stage (Seed, Series A, B, etc.) |
@@ -119,7 +120,7 @@ streamlit run app.py
 | **Size Filter** | Max 100 employees (tunable) |
 | **Stage Filter** | Series B and earlier only |
 | **Evidence in Table** | Each score shows quote + source URL |
-| **VC Analyst Chat** | AI insights using only grounded data |
+| **VC Analyst Chat** | Dual output: grounded analysis + VC interpretation |
 
 ### Performance
 | Metric | Value |

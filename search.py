@@ -115,6 +115,7 @@ def build_search_query(
     seed: Union[str, CompanyProfile, Dict],
     criteria: List[str] = None,
     location: str = None,
+    include_filters: bool = True,
 ) -> str:
     """
     Build a search query from the seed company's 6 structured attributes.
@@ -131,6 +132,10 @@ def build_search_query(
     4. technology - What tech stack or innovation?
     5. location - Where are they based?
     6. company_size - What stage are they at?
+
+    Args:
+        include_filters: If True, bakes eligibility filters into query (MENA, early-stage, <100 employees)
+                        This helps Tavily return more relevant results upfront.
 
     Example output:
     "startups solving climate change carbon removal B2B corporations Climate Tech in GCC MENA"
@@ -192,6 +197,11 @@ def build_search_query(
             query_parts.append(size[:40])
         else:
             query_parts.append("early-stage startup seed series-A")
+
+    # Bake eligibility filters into query for better upfront results
+    # This helps Tavily return MENA early-stage startups directly
+    if include_filters:
+        query_parts.append("startup under 100 employees seed series-A series-B early-stage")
 
     return " ".join(query_parts)
 
@@ -256,12 +266,14 @@ def search_similar_companies(
         client = _get_tavily_client()
         source_domains = sources or DEFAULT_SOURCES
 
-        # Tavily search — we ask for more results than needed because some
-        # will be duplicates or irrelevant (news articles about the seed company)
+        # Tavily search — we ask for 2x results to account for post-enrichment filtering
+        # (some companies will be filtered out for: >100 employees, non-MENA, later stage)
+        # This "overfetch" strategy ensures we return enough eligible companies
+        overfetch_multiplier = 2
         raw_results = client.search(
             query=query,
             search_depth="advanced",      # Deeper search, better results
-            max_results=max_results * 3,  # Get extra for filtering
+            max_results=max_results * overfetch_multiplier,  # 2x for post-filter buffer
             include_domains=source_domains,
         )
 
