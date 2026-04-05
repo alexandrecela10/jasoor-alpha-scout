@@ -227,6 +227,7 @@ def search_similar_companies(
     max_results: int = 10,
     target_stage: str = "early-stage",
     max_source_age_days: int = None,
+    exclude_companies: List[str] = None,
 ) -> List[SearchResult]:
     """
     Find companies similar to a seed company using Tavily search.
@@ -245,6 +246,7 @@ def search_similar_companies(
         max_results:  How many companies to return (default: 10)
         target_stage: Target funding stage ("early-stage", "seed", "series-a")
         max_source_age_days: Only include sources from the last N days (None = no limit)
+        exclude_companies: List of company names to exclude from results
 
     Returns:
         List of SearchResult objects, each with source_url attached.
@@ -323,6 +325,18 @@ def search_similar_companies(
             criteria=criteria,
             trace=trace,
         )
+        
+        # Step 4: Filter out excluded companies
+        if exclude_companies:
+            exclude_set = {name.lower().strip() for name in exclude_companies}
+            before_count = len(search_results)
+            search_results = [
+                r for r in search_results 
+                if r.name.lower().strip() not in exclude_set
+            ]
+            excluded_count = before_count - len(search_results)
+            if excluded_count > 0:
+                logger.info(f"Excluded {excluded_count} companies from results")
 
         # Log success to Langfuse
         if trace is not None:

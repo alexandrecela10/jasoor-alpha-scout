@@ -671,7 +671,43 @@ with st.sidebar:
             if early_stage_only:
                 st.info("⚠️ Only Pre-seed, Seed, Series A, Series B companies will be included")
         
-        with st.expander("� Information Exclusion"):
+        with st.expander("🚫 Exclude Companies"):
+            st.caption("*Exclude specific companies from search results*")
+            
+            # Auto-populate with filtered-out companies from previous search
+            filtered_out_names = []
+            if "filtered_out" in st.session_state and st.session_state.filtered_out:
+                filtered_out_names = [c.name for c in st.session_state.filtered_out]
+                st.info(f"💡 {len(filtered_out_names)} companies were filtered out in last search")
+            
+            # Get blacklisted companies
+            blacklist = get_blacklist()
+            blacklist_names = [b["company_name"] for b in blacklist] if blacklist else []
+            
+            # Combine suggestions
+            suggested_exclusions = list(set(filtered_out_names + blacklist_names))
+            
+            # Multi-select for excluded companies
+            exclude_companies = st.multiselect(
+                "Companies to exclude:",
+                options=suggested_exclusions if suggested_exclusions else [],
+                default=[],
+                help="These companies will be skipped in search results"
+            )
+            
+            # Manual entry for additional companies
+            manual_exclude_text = st.text_area(
+                "Additional companies to exclude (one per line):",
+                value="",
+                height=60,
+            )
+            manual_exclude = [c.strip() for c in manual_exclude_text.split("\n") if c.strip()]
+            all_excluded_companies = list(set(exclude_companies + manual_exclude))
+            
+            if all_excluded_companies:
+                st.warning(f"**Excluding {len(all_excluded_companies)} companies:** {', '.join(all_excluded_companies[:5])}{'...' if len(all_excluded_companies) > 5 else ''}")
+        
+        with st.expander("🚫 Information Exclusion"):
             st.caption("*Exclude news types that signal the opportunity is gone*")
             col1, col2 = st.columns(2)
             with col1:
@@ -1005,6 +1041,8 @@ if search_button:
                 
                 # PRIMARY: Tavily search with stage + MENA filters baked in
                 # Searches ONLY the selected source domains
+                if all_excluded_companies:
+                    st.write(f"🚫 Excluding {len(all_excluded_companies)} companies from results")
                 st.write(f"🔍 Searching {len(custom_sources)} sources for {target_stage} MENA startups (last {max_source_age} days)...")
                 results = search_similar_companies(
                     seed=seed_input,
@@ -1015,6 +1053,7 @@ if search_button:
                     max_results=max_results,
                     target_stage=target_stage,
                     max_source_age_days=max_source_age,  # Source freshness filter
+                    exclude_companies=all_excluded_companies,  # Exclude specific companies
                 )
                 
                 # Enrichment: Website/LinkedIn verification + Stage verification + Website content
