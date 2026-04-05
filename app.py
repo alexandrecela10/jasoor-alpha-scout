@@ -16,6 +16,10 @@ import os
 import logging
 from typing import List
 
+# Suppress OpenTelemetry 401 errors from Google GenAI SDK
+# The SDK tries to export telemetry but we don't have OTEL credentials configured
+os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -1400,6 +1404,8 @@ if search_button:
                     st.session_state.search_results,
                     weights=weights,
                     custom_criteria=custom_criteria,
+                    user_id=st.session_state.langfuse_user_id,
+                    session_id=st.session_state.langfuse_session_id,
                 )
                 st.session_state.scored_companies = scored
                 st.session_state.scoring_complete = True

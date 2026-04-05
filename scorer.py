@@ -165,6 +165,8 @@ def score_company(
     weights: Dict[str, float] = None,
     custom_criteria: Dict[str, str] = None,
     dimension_config: Dict[str, Dict] = None,
+    user_id: str = None,
+    session_id: str = None,
 ) -> ScoredCompany:
     """
     Score a single company on ALL dimensions in ONE LLM call.
@@ -203,6 +205,8 @@ def score_company(
             "dimensions": dims_to_score,
         },
         metadata={"company": search_result.name},
+        user_id=user_id,
+        session_id=session_id,
     )
 
     scored = ScoredCompany(search_result=search_result)
@@ -873,6 +877,8 @@ def score_companies(
     dimensions: List[str] = None,
     weights: Dict[str, float] = None,
     custom_criteria: Dict[str, str] = None,
+    user_id: str = None,
+    session_id: str = None,
 ) -> List[ScoredCompany]:
     """
     Score multiple companies. Convenience wrapper around score_company().
@@ -882,6 +888,8 @@ def score_companies(
         dimensions:      Which dimensions to score
         weights:         User-defined weights
         custom_criteria: User-defined criteria descriptions
+        user_id:         Langfuse user ID for tracing
+        session_id:      Langfuse session ID for tracing
 
     Returns list of ScoredCompany objects, sorted by average score (descending).
     """
@@ -889,7 +897,10 @@ def score_companies(
 
     for result in search_results:
         logger.info(f"Scoring: {result.name}")
-        scored = score_company(result, dimensions, weights, custom_criteria)
+        scored = score_company(
+            result, dimensions, weights, custom_criteria,
+            user_id=user_id, session_id=session_id
+        )
         scored_list.append(scored)
 
     # Sort by average score (companies with more N/A scores rank lower)
