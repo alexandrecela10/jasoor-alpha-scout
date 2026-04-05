@@ -59,12 +59,20 @@ def get_langfuse() -> Langfuse:
         return None
 
     # Create the client and store it for reuse
-    _langfuse_client = Langfuse(
-        secret_key=secret_key,
-        public_key=public_key,
-        host=host,
-    )
-    logger.info(f"Langfuse tracing enabled (host={host})")
+    # flush_at=1 ensures traces are sent immediately (not batched)
+    # This is important for Streamlit Cloud where the process may be short-lived
+    try:
+        _langfuse_client = Langfuse(
+            secret_key=secret_key,
+            public_key=public_key,
+            host=host,
+            flush_at=1,  # Send traces immediately, don't batch
+            flush_interval=1,  # Flush every 1 second
+        )
+        logger.info(f"Langfuse tracing enabled (host={host}, flush_at=1)")
+    except Exception as e:
+        logger.error(f"Failed to create Langfuse client: {e}")
+        return None
     return _langfuse_client
 
 
@@ -148,6 +156,12 @@ def create_trace(
                 except Exception:
                     pass
         
+        # Flush immediately to ensure trace is sent
+        try:
+            lf.flush()
+        except Exception:
+            pass
+        
         return TraceWrapper(trace, trace_id)
     except Exception as e:
         # Tracing should never crash the app — log and continue
@@ -194,6 +208,37 @@ def flush_langfuse():
     if _langfuse_client is not None:
         _langfuse_client.flush()
         logger.info("Langfuse events flushed.")
+
+
+def check_langfuse_config() -> dict:
+    """
+    Check if Langfuse is properly configured. Returns status dict for debugging.
+    """
+    secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
+    public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
+    host = os.environ.get("LANGFUSE_BASE_URL", os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"))
+    
+    status = {
+        "secret_key_set": bool(secret_key),
+        "secret_key_preview": f"{secret_key[:8]}..." if len(secret_key) > 8 else "NOT SET",
+        "public_key_set": bool(public_key),
+        "public_key_preview": f"{public_key[:8]}..." if len(public_key) > 8 else "NOT SET",
+        "host": host,
+        "client_initialized": _langfuse_client is not None,
+    }
+    
+    # Try to verify connection
+    if _langfuse_client is not None:
+        try:
+            # Langfuse SDK v2+ has auth_check method
+            if hasattr(_langfuse_client, 'auth_check'):
+                status["auth_check"] = _langfuse_client.auth_check()
+            else:
+                status["auth_check"] = "method not available"
+        except Exception as e:
+            status["auth_check"] = f"error: {e}"
+    
+    return status
 
 
 # =============================================================================
