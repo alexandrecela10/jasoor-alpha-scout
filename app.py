@@ -590,7 +590,7 @@ with st.sidebar:
         )
         max_results = st.slider(
             "Companies to analyze:",
-            min_value=3, max_value=10, value=5,
+            min_value=5, max_value=100, value=10,
         )
 
         with st.expander("🔍 Leverage Your Trusted Sources"):
