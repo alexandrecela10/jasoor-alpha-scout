@@ -18,7 +18,10 @@ from typing import List
 
 # Suppress OpenTelemetry 401 errors from Google GenAI SDK
 # The SDK tries to export telemetry but we don't have OTEL credentials configured
-os.environ.setdefault("OTEL_SDK_DISABLED", "true")
+# Must be set BEFORE any Google imports
+os.environ["OTEL_SDK_DISABLED"] = "true"
+os.environ["OTEL_TRACES_EXPORTER"] = "none"
+os.environ["OTEL_METRICS_EXPORTER"] = "none"
 
 import streamlit as st
 from dotenv import load_dotenv
