@@ -132,13 +132,145 @@ def call_gemini(
     raise last_error
 
 
+def _repair_truncated_json(text: str) -> Optional[str]:
+    """
+    Attempt to repair truncated JSON by finding complete objects.
+    
+    When Gemini's response is cut off mid-JSON, we try to salvage
+    the complete objects that were returned before truncation.
+    
+    Example:
+        Input:  [{"name": "A", ...}, {"name": "B", "field": "trun
+        Output: [{"name": "A", ...}]
+    
+    Returns repaired JSON string or None if repair not possible.
+    """
+    text = text.strip()
+    
+    # Handle arrays (most common for company extraction)
+    if text.startswith("["):
+        # Find all complete objects by tracking brace depth
+        objects = []
+        current_start = None
+        depth = 0
+        in_string = False
+        escape_next = False
+        
+        for i, char in enumerate(text):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+                
+            if char == '{':
+                if depth == 0:
+                    current_start = i
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0 and current_start is not None:
+                    # Found a complete object
+                    obj_str = text[current_start:i+1]
+                    try:
+                        json.loads(obj_str)  # Validate it's valid JSON
+                        objects.append(obj_str)
+                    except json.JSONDecodeError:
+                        pass
+                    current_start = None
+        
+        if objects:
+            repaired = "[" + ", ".join(objects) + "]"
+            logger.info(f"JSON repair: recovered {len(objects)} complete objects from truncated response")
+            return repaired
+    
+    # Handle single object truncation
+    elif text.startswith("{"):
+        # Find the last complete nested structure
+        depth = 0
+        last_valid_end = -1
+        in_string = False
+        escape_next = False
+        
+        for i, char in enumerate(text):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+                
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    last_valid_end = i
+                    break
+        
+        if last_valid_end > 0:
+            repaired = text[:last_valid_end + 1]
+            try:
+                json.loads(repaired)
+                logger.info("JSON repair: recovered truncated object")
+                return repaired
+            except json.JSONDecodeError:
+                pass
+    
+    return None
+
+
+def _extract_objects_regex(text: str) -> Optional[list]:
+    """
+    Nuclear fallback: extract individual JSON objects using regex.
+    
+    This handles severely malformed responses by finding anything
+    that looks like a complete JSON object.
+    """
+    import re
+    
+    # Find potential JSON objects (simple pattern, may have false positives)
+    pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+    matches = re.findall(pattern, text)
+    
+    valid_objects = []
+    for match in matches:
+        try:
+            obj = json.loads(match)
+            # Must have a 'name' field to be a company object
+            if isinstance(obj, dict) and 'name' in obj:
+                valid_objects.append(obj)
+        except json.JSONDecodeError:
+            continue
+    
+    if valid_objects:
+        logger.info(f"JSON regex extraction: recovered {len(valid_objects)} objects")
+        return valid_objects
+    
+    return None
+
+
 def parse_json_response(text: str) -> Dict:
     """
-    Parse JSON from Gemini, handling markdown fences and extra text.
-    Three strategies tried in order:
-    1. Strip ```json ... ``` fences
+    Parse JSON from Gemini with graceful degradation for truncated responses.
+    
+    Strategies tried in order:
+    1. Strip ```json ... ``` fences and parse
     2. Direct json.loads()
-    3. Find first { to last } and parse that substring
+    3. Find JSON boundaries and parse
+    4. Repair truncated JSON (recover complete objects)
+    5. Regex extraction (nuclear fallback)
     """
     cleaned = text.strip()
 
@@ -152,7 +284,13 @@ def parse_json_response(text: str) -> Dict:
                 try:
                     return json.loads(candidate)
                 except json.JSONDecodeError:
-                    pass
+                    # Try repair on the candidate
+                    repaired = _repair_truncated_json(candidate)
+                    if repaired:
+                        try:
+                            return json.loads(repaired)
+                        except json.JSONDecodeError:
+                            pass
 
     # Strategy 2: Direct parse
     try:
@@ -162,12 +300,41 @@ def parse_json_response(text: str) -> Dict:
 
     # Strategy 3: Find JSON boundaries
     first_brace = cleaned.find("{")
-    last_brace = cleaned.rfind("}")
-    if first_brace != -1 and last_brace > first_brace:
+    first_bracket = cleaned.find("[")
+    
+    # Use whichever comes first
+    if first_bracket != -1 and (first_brace == -1 or first_bracket < first_brace):
+        # Array - find matching ]
+        last_bracket = cleaned.rfind("]")
+        if last_bracket > first_bracket:
+            try:
+                return json.loads(cleaned[first_bracket:last_bracket + 1])
+            except json.JSONDecodeError:
+                pass
+    
+    if first_brace != -1:
+        last_brace = cleaned.rfind("}")
+        if last_brace > first_brace:
+            try:
+                return json.loads(cleaned[first_brace:last_brace + 1])
+            except json.JSONDecodeError:
+                pass
+
+    # Strategy 4: Repair truncated JSON
+    repaired = _repair_truncated_json(cleaned)
+    if repaired:
         try:
-            return json.loads(cleaned[first_brace:last_brace + 1])
+            result = json.loads(repaired)
+            logger.warning(f"Used JSON repair fallback - partial data recovered")
+            return result
         except json.JSONDecodeError:
             pass
 
-    logger.warning(f"Failed to parse JSON: {text[:200]}")
+    # Strategy 5: Regex extraction (nuclear fallback)
+    extracted = _extract_objects_regex(cleaned)
+    if extracted:
+        logger.warning(f"Used regex extraction fallback - {len(extracted)} objects recovered")
+        return extracted
+
+    logger.warning(f"Failed to parse JSON (all strategies exhausted): {text[:200]}")
     return {"error": "Failed to parse response", "raw": text[:500]}
