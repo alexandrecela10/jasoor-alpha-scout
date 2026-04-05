@@ -17,14 +17,7 @@ Required environment variables:
 
 import os
 import logging
-
-# Try to import Langfuse - support both old and new SDK versions
-try:
-    from langfuse import get_client  # SDK v4+
-    LANGFUSE_V4 = True
-except ImportError:
-    from langfuse import Langfuse  # SDK v2/v3
-    LANGFUSE_V4 = False
+from langfuse import Langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +26,10 @@ logger = logging.getLogger(__name__)
 # Why a singleton? Creating multiple clients wastes connections and can
 # cause duplicate events. One client batches everything efficiently.
 # ---------------------------------------------------------------------------
-_langfuse_client = None
+_langfuse_client: Langfuse = None
 
 
-def get_langfuse():
+def get_langfuse() -> Langfuse:
     """
     Get or create the Langfuse client singleton.
 
@@ -66,25 +59,12 @@ def get_langfuse():
         return None
 
     # Create the client and store it for reuse
-    # SDK v4 uses get_client(), SDK v2/v3 uses Langfuse()
-    try:
-        if LANGFUSE_V4:
-            # SDK v4+ - uses get_client() which reads from env vars automatically
-            _langfuse_client = get_client()
-            logger.info(f"Langfuse v4 tracing enabled (host={host})")
-        else:
-            # SDK v2/v3 - uses Langfuse() constructor
-            _langfuse_client = Langfuse(
-                secret_key=secret_key,
-                public_key=public_key,
-                host=host,
-                flush_at=1,  # Send traces immediately, don't batch
-                flush_interval=1,  # Flush every 1 second
-            )
-            logger.info(f"Langfuse v2/v3 tracing enabled (host={host}, flush_at=1)")
-    except Exception as e:
-        logger.error(f"Failed to create Langfuse client: {e}")
-        return None
+    _langfuse_client = Langfuse(
+        secret_key=secret_key,
+        public_key=public_key,
+        host=host,
+    )
+    logger.info(f"Langfuse tracing enabled (host={host})")
     return _langfuse_client
 
 
@@ -117,20 +97,20 @@ def create_trace(
         return None
 
     try:
-        # SDK v4 uses start_observation(), SDK v2/v3 uses trace()
+        # Try multiple Langfuse API methods for compatibility across SDK versions
         trace = None
         trace_id = None
         
-        if LANGFUSE_V4:
-            # SDK v4+ - use start_observation() to create a trace-level span
+        # Method 1: SDK v3+ uses start_observation
+        if hasattr(lf, 'start_observation'):
             trace = lf.start_observation(
                 name=name,
                 input=input_data,
                 metadata=metadata,
             )
-            trace_id = trace.id if hasattr(trace, 'id') else None
-        else:
-            # SDK v2/v3 - use trace() method
+            trace_id = getattr(trace, 'id', None) or str(id(trace))
+        # Method 2: SDK v2 uses trace()
+        elif hasattr(lf, 'trace'):
             trace = lf.trace(
                 name=name,
                 input=input_data,
@@ -138,7 +118,11 @@ def create_trace(
                 user_id=user_id,
                 session_id=session_id,
             )
-            trace_id = trace.id if hasattr(trace, 'id') else None
+            trace_id = getattr(trace, 'id', None)
+        # Method 3: Fallback - just return a dummy wrapper
+        else:
+            logger.warning("Langfuse SDK doesn't have trace() or start_observation() - tracing disabled")
+            return None
         
         logger.info(f"Created Langfuse trace: {trace_id} (user={user_id}, session={session_id})")
         
@@ -163,12 +147,6 @@ def create_trace(
                         self._trace.end()
                 except Exception:
                     pass
-        
-        # Flush immediately to ensure trace is sent
-        try:
-            lf.flush()
-        except Exception:
-            pass
         
         return TraceWrapper(trace, trace_id)
     except Exception as e:
@@ -216,37 +194,6 @@ def flush_langfuse():
     if _langfuse_client is not None:
         _langfuse_client.flush()
         logger.info("Langfuse events flushed.")
-
-
-def check_langfuse_config() -> dict:
-    """
-    Check if Langfuse is properly configured. Returns status dict for debugging.
-    """
-    secret_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
-    public_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
-    host = os.environ.get("LANGFUSE_BASE_URL", os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"))
-    
-    status = {
-        "secret_key_set": bool(secret_key),
-        "secret_key_preview": f"{secret_key[:8]}..." if len(secret_key) > 8 else "NOT SET",
-        "public_key_set": bool(public_key),
-        "public_key_preview": f"{public_key[:8]}..." if len(public_key) > 8 else "NOT SET",
-        "host": host,
-        "client_initialized": _langfuse_client is not None,
-    }
-    
-    # Try to verify connection
-    if _langfuse_client is not None:
-        try:
-            # Langfuse SDK v2+ has auth_check method
-            if hasattr(_langfuse_client, 'auth_check'):
-                status["auth_check"] = _langfuse_client.auth_check()
-            else:
-                status["auth_check"] = "method not available"
-        except Exception as e:
-            status["auth_check"] = f"error: {e}"
-    
-    return status
 
 
 # =============================================================================
