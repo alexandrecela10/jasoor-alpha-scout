@@ -560,7 +560,12 @@ IMPORTANT: Only include fields where you found clear evidence in the content.
 The quote must be an EXACT substring from the content above."""
 
     try:
-        response = call_gemini(prompt, use_pro_model=False)
+        response = call_gemini(
+            prompt, 
+            use_pro_model=False,
+            span_name="website_finder_agent",
+            metadata={"company": company_name, "url": url}
+        )
         data = parse_json_response(response)
         
         if not data:
@@ -668,7 +673,12 @@ Return JSON:
 
 Only include fields with clear evidence. Quote must be exact substring."""
 
-        response = call_gemini(prompt, use_pro_model=False)
+        response = call_gemini(
+            prompt, 
+            use_pro_model=False,
+            span_name="linkedin_finder_agent",
+            metadata={"company": company_name, "url": linkedin_url}
+        )
         data = parse_json_response(response)
         
         if not data:
@@ -773,7 +783,12 @@ If no funding information is found, return:
 
 IMPORTANT: The quote must be an EXACT substring from the content above."""
 
-        response = call_gemini(prompt, use_pro_model=False)
+        response = call_gemini(
+            prompt, 
+            use_pro_model=False,
+            span_name="stage_finder_agent",
+            metadata={"company": company_name}
+        )
         data = parse_json_response(response)
         
         if not data or not data.get("funding_stage"):
