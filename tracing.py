@@ -76,17 +76,18 @@ def create_trace(name: str, input_data: dict = None, metadata: dict = None):
     - "search_similar_companies" trace contains the Tavily search + extraction calls
     - "score_company" trace contains the 4 scoring dimension calls
 
-    Returns the observation object, or None if tracing is disabled.
-    We use as_type="span" because a trace is a container, not an LLM call.
+    Returns the trace object, or None if tracing is disabled.
+    Uses lf.trace() to create a proper trace that can receive scores.
     """
     lf = get_langfuse()
     if lf is None:
         return None
 
     try:
-        return lf.start_observation(
+        # Use trace() instead of start_observation() to get a proper trace
+        # that can receive scores in the Langfuse evaluations section
+        return lf.trace(
             name=name,
-            as_type="span",          # "span" = logical grouping (not an LLM call)
             input=input_data,
             metadata=metadata,
         )
