@@ -10,38 +10,46 @@ AI-powered tool that discovers, enriches, and scores early-stage startups in the
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           ALPHA SCOUT PIPELINE                               │
+│                      ALPHA SCOUT PIPELINE (v2 - Fast)                        │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-  ┌──────────────┐     ┌──────────────────────────────────────┐     ┌──────────────┐
-  │   SEARCH     │────▶│         MULTI-SOURCE ENRICHMENT       │────▶│    SCORE     │
-  │  search.py   │     │         source_enrichment.py          │     │  scorer.py   │
-  │              │     │                                        │     │              │
-  │ • Tavily API │     │  ┌─────────────┐  ┌─────────────┐     │     │ • 4 dims     │
-  │ • Smart query│     │  │  Website    │  │  LinkedIn   │     │     │ • Evidence   │
-  │ • 2x overfetch│    │  │  Finder     │  │  Finder     │     │     │ • Grounding  │
-  └──────────────┘     │  │  Agent      │  │  Agent      │     │     └──────────────┘
-                       │  └──────┬──────┘  └──────┬──────┘     │            │
-                       │         │                │            │            │
-                       │         ▼                ▼            │            │
-                       │  ┌─────────────┐  ┌─────────────┐     │            │
-                       │  │  Stage      │  │  FILTERS    │     │            │
-                       │  │  Finder     │  │ • <100 emp  │     │            │
-                       │  │  Agent      │  │ • MENA HQ   │     │            │
-                       │  │             │  │ • ≤Series B │     │            │
-                       │  └─────────────┘  └─────────────┘     │            │
-                       └───────────────────────────────────────┘            │
-                                                                            │
-       ┌────────────────────────────────────────────────────────────────────┘
-       ▼
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │                    ⚡ GEMINI AI SEARCH (Primary)                          │
+  │                      search_gemini.py (~15s)                              │
+  │                                                                           │
+  │  • Single Gemini call with criteria baked in                             │
+  │  • Returns: Name, Website, LinkedIn, Employees, Stage, Location          │
+  │  • Already filtered (MENA, <100 emp, ≤Series B)                          │
+  │  • Tavily as fallback if Gemini returns nothing                          │
+  └──────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │                    ✅ LIGHT VERIFICATION (~1s)                            │
+  │                                                                           │
+  │  • Quick HEAD requests to verify website/LinkedIn exist                  │
+  │  • No content extraction (fast)                                          │
+  └──────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
   ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-  │   DISPLAY    │────▶│   ANALYZE    │────▶│   EXPORT     │
-  │   app.py     │     │  vc_chat.py  │     │              │
+  │    SCORE     │────▶│   ANALYZE    │────▶│   EXPORT     │
+  │  scorer.py   │     │  vc_chat.py  │     │              │
   │              │     │              │     │              │
-  │ • Table +    │     │ • AI Analyst │     │ • Excel      │
-  │   Evidence   │     │ • Grounded   │     │ • Target     │
-  │ • 2x2 Matrix │     │   insights   │     │   List       │
+  │ • 4 dims     │     │ • AI Analyst │     │ • Excel      │
+  │ • Evidence   │     │ • Grounded   │     │ • Target     │
+  │ • Grounding  │     │   insights   │     │   List       │
   └──────────────┘     └──────────────┘     └──────────────┘
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │              🔍 DEEP ENRICHMENT (Optional, On-Demand)                     │
+  │                    source_enrichment.py                                   │
+  │                                                                           │
+  │  • Website Agent: Extract detailed info from company website             │
+  │  • LinkedIn Agent: Get exact employee count, HQ location                 │
+  │  • Stage Agent: Find latest funding news                                 │
+  │  • Use when you need deeper due diligence on specific companies          │
+  └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -110,13 +118,11 @@ streamlit run app.py
 ### Key Features
 | Feature | Description |
 |---------|-------------|
+| **⚡ Gemini AI Search** | Single API call returns pre-filtered companies (~15s for 10) |
 | **🧠 Learning System** | Blacklists ineligible companies — search gets faster over time |
-| **Smart Query** | Bakes eligibility filters (MENA, early-stage, <100 emp) into search query |
-| **2x Overfetch** | Searches for 2x companies to ensure enough pass post-enrichment filters |
-| **Website Finder Agent** | Searches & verifies official company website |
-| **LinkedIn Finder Agent** | Finds LinkedIn page, extracts employees/HQ |
-| **Stage Finder Agent** | Finds funding stage (Seed, Series A, B, etc.) |
-| **⚡ Parallel Enrichment** | 3 agents run simultaneously (3x faster) |
+| **Tavily Fallback** | If Gemini returns nothing, falls back to Tavily search |
+| **Light Verification** | Quick HEAD requests to verify URLs exist (~1s) |
+| **Deep Enrichment** | Optional: Website, LinkedIn, Stage agents for due diligence |
 | **MENA Filter** | Only MENA-headquartered companies |
 | **Size Filter** | Max 100 employees (tunable) |
 | **Stage Filter** | Series B and earlier only |
@@ -140,12 +146,12 @@ The search engine **learns over time** by maintaining a blacklist of companies t
 4. Users can view, edit, or clear the blacklist in the sidebar
 
 ### Performance
-| Metric | Value |
-|--------|-------|
-| **Enrichment per company** | ~3s (parallel) vs ~9s (sequential) |
-| **10 companies** | ~30s total |
-| **Parallelization** | ThreadPoolExecutor with 3 workers |
-| **Learning speedup** | Skips blacklisted companies (0s per skip) |
+| Metric | Old (Tavily) | New (Gemini) |
+|--------|--------------|--------------|
+| **10 companies** | ~60s | **~15s** |
+| **Search method** | Tavily + 3 agents | Single Gemini call |
+| **Filtering** | Post-enrichment | Pre-filtered in query |
+| **Learning speedup** | N/A | Skips blacklisted (0s) |
 
 ---
 

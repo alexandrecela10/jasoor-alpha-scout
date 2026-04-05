@@ -37,7 +37,8 @@ except Exception:
 from config import PORTFOLIO_COMPANIES, SCORING_DIMENSIONS, DEFAULT_SOURCES, BENCHMARK_MENA_STARTUPS, SCOUT_MODES
 from ingest import get_simulated_inbound, extract_company_from_website, extract_company_from_text
 from models import ScoredCompany
-from search import search_similar_companies
+from search import search_similar_companies as search_tavily  # Tavily fallback
+from search_gemini import search_with_gemini, verify_urls_exist  # Primary: Gemini
 from scorer import score_companies
 from visualizer import create_matrix_plot, get_axis_options, AXIS_LABELS
 from reporting import (
@@ -994,24 +995,44 @@ if search_button:
         # Search for companies similar to the benchmark using Tavily + Gemini
         with st.status("🔍 Searching for similar companies...", expanded=True) as status:
             st.write(f"Benchmark: **{benchmark_label}** | Location: {location}")
-            st.write(f"Sources: {', '.join(custom_sources[:3])}...")
             try:
                 # Pass custom_attrs as the seed (dict format) if user edited attributes
                 # Otherwise pass the benchmark_label string for config lookup
                 seed_input = custom_attrs if custom_attrs else benchmark_label
-                results = search_similar_companies(
+                
+                # PRIMARY: Use Gemini search (fast, pre-filtered)
+                st.write("⚡ Using Gemini AI search (fast mode)...")
+                results = search_with_gemini(
                     seed=seed_input,
                     criteria=selected_criteria,
                     location=location,
-                    sources=custom_sources,
-                    exclusions=all_exclusions,
                     max_results=max_results,
+                    max_employees=max_employees if enable_size_filter else 9999,
+                    early_stage_only=early_stage_only,
                 )
                 
-                # Source enrichment and filtering (size + MENA + stage)
+                # FALLBACK: If Gemini returns nothing, try Tavily
+                if not results:
+                    st.write("🔄 Gemini returned no results, trying Tavily search...")
+                    results = search_tavily(
+                        seed=seed_input,
+                        criteria=selected_criteria,
+                        location=location,
+                        sources=custom_sources,
+                        exclusions=all_exclusions,
+                        max_results=max_results,
+                    )
+                
+                # Light verification of URLs (quick HEAD requests)
+                if results:
+                    st.write("✅ Verifying company websites...")
+                    results = verify_urls_exist(results)
+                
+                # Source enrichment is now OPTIONAL (Gemini already provides basic data)
+                # Only run if user explicitly wants deep enrichment
                 filtered_out_companies = []
                 enrichments = {}
-                if enrich_with_linkedin and results:
+                if enrich_with_linkedin and results and False:  # Disabled by default - Gemini already enriches
                     st.write("🔗 Enriching with website, LinkedIn, and funding data...")
                     
                     # Create trace for Langfuse evaluation with user/session tracking
