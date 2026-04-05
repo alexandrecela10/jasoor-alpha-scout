@@ -1005,7 +1005,7 @@ if search_button:
                 
                 # PRIMARY: Tavily search with stage + MENA filters baked in
                 # Searches ONLY the selected source domains
-                st.write(f"� Searching {len(custom_sources)} sources for {target_stage} MENA startups...")
+                st.write(f"🔍 Searching {len(custom_sources)} sources for {target_stage} MENA startups (last {max_source_age} days)...")
                 results = search_similar_companies(
                     seed=seed_input,
                     criteria=selected_criteria,
@@ -1014,6 +1014,7 @@ if search_button:
                     exclusions=all_exclusions,
                     max_results=max_results,
                     target_stage=target_stage,
+                    max_source_age_days=max_source_age,  # Source freshness filter
                 )
                 
                 # Enrichment: Website/LinkedIn verification + Stage verification + Website content

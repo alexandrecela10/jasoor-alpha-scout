@@ -226,6 +226,7 @@ def search_similar_companies(
     exclusions: List[str] = None,
     max_results: int = 10,
     target_stage: str = "early-stage",
+    max_source_age_days: int = None,
 ) -> List[SearchResult]:
     """
     Find companies similar to a seed company using Tavily search.
@@ -243,6 +244,7 @@ def search_similar_companies(
         exclusions:   Keywords to exclude (e.g., ["raises", "funding round"])
         max_results:  How many companies to return (default: 10)
         target_stage: Target funding stage ("early-stage", "seed", "series-a")
+        max_source_age_days: Only include sources from the last N days (None = no limit)
 
     Returns:
         List of SearchResult objects, each with source_url attached.
@@ -290,12 +292,21 @@ def search_similar_companies(
         # (some companies will be filtered out for: >100 employees, non-MENA, later stage)
         # This "overfetch" strategy ensures we return enough eligible companies
         overfetch_multiplier = 2
-        raw_results = client.search(
-            query=query,
-            search_depth="advanced",      # Deeper search, better results
-            max_results=max_results * overfetch_multiplier,  # 2x for post-filter buffer
-            include_domains=source_domains,
-        )
+        
+        # Build search kwargs
+        search_kwargs = {
+            "query": query,
+            "search_depth": "advanced",      # Deeper search, better results
+            "max_results": max_results * overfetch_multiplier,  # 2x for post-filter buffer
+            "include_domains": source_domains,
+        }
+        
+        # Add freshness filter if specified (Tavily supports 'd' for days)
+        if max_source_age_days:
+            search_kwargs["days"] = max_source_age_days
+            logger.info(f"Filtering sources to last {max_source_age_days} days")
+        
+        raw_results = client.search(**search_kwargs)
 
         # Step 2.5: Filter by exclusions (e.g., remove fundraising news)
         filtered_results = filter_by_exclusions(
