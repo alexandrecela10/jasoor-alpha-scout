@@ -4,6 +4,12 @@
 
 AI-powered tool that discovers, enriches, and scores early-stage startups in the **MENA** region using grounded real-time data.
 
+![Alpha Scout Comparison View](assets/screenshot-comparison.png)
+
+### 🎬 Demo Video
+
+*Coming soon — video demo will be uploaded to YouTube*
+
 ---
 
 ## Flow Diagram
