@@ -156,17 +156,12 @@ MATRIX_AXES = [
 # Why these? They're the most reliable English-language sources for MENAT startups.
 
 DEFAULT_SOURCES = [
-    # MENA-specific startup sources (guaranteed MENA focus)
+    # MENA startup-focused sources ONLY (no big business news)
     "menabytes.com",        # MENA startup news (funding rounds, launches)
-    "wamda.com",            # MENA entrepreneurship platform
+    "wamda.com",            # MENA entrepreneurship & startups
     "magnitt.com",          # MENA & Africa startup data platform
-    "zawya.com",            # MENA business intelligence
     "arabnet.me",           # Arab tech & startup ecosystem
-    "forbesmiddleeast.com", # Forbes Middle East
-    "gulfbusiness.com",     # Gulf business news
-    "arabianbusiness.com",  # Arabian business news
-    "thenationalnews.com",  # UAE national news (business section)
-    # Crunchbase MENA hub (filtered to MENA HQ companies)
+    # Crunchbase MENA hub (filtered to MENA HQ startups)
     "crunchbase.com/hub/middle-east-and-north-africa-startups",
 ]
 
