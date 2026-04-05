@@ -66,7 +66,9 @@ Each company scored on: **Offer Power**, **Sales Ability**, **Tech Moat**, **Fou
 ### 4. **Get AI Insights**
 > *"I want an AI analyst to help me understand the data"*
 
-VC Analyst chat provides grounded analysis using only verified evidence.
+VC Analyst chat provides **dual output**:
+- **📊 Grounded Analysis** — Only verified evidence, exact quotes
+- **💡 VC Interpretation** — Pattern-matched insights from 15+ years experience
 
 ### 5. **Save & Continue Later**
 > *"I want to pick up where I left off"*

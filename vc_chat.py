@@ -48,22 +48,22 @@ Be specific to the companies provided — don't give generic advice.
 """
 
 # Suggested prompts that reflect common VC analyst questions
-# All prompts emphasize GROUNDED INFORMATION and table output
+# Each prompt asks for BOTH grounded analysis AND VC interpretation
 SUGGESTED_PROMPTS = [
     {
         "label": "🏰 Moat Analysis",
-        "prompt": "ONLY USING GROUNDED INFORMATION from the evidence provided, analyze the competitive moat of each target company. Create a table ranking them by moat strength (1-5) with columns: Company | Moat Type | Moat Score | Key Evidence | Why This Score. Be specific — cite the exact grounded evidence.",
-        "description": "Rank companies by moat strength",
+        "prompt": "Analyze the competitive moat of each target company. In the GROUNDED section, create a table with columns: Company | Moat Type | Evidence Quote | Score (1-5). In the VC INTERPRETATION section, share your pattern-matched insights on which moats are likely to hold up and why.",
+        "description": "Grounded + VC intuition on moats",
     },
     {
         "label": "📊 Due Diligence Ranking",
-        "prompt": "ONLY USING GROUNDED INFORMATION, rank these companies by investment readiness. Create a table with columns: Company | Grounding Score | Key Strengths (from evidence) | Red Flags | DD Priority (High/Med/Low). Only cite facts that are verified in the grounded evidence.",
-        "description": "Prioritized DD based on evidence",
+        "prompt": "Rank these companies by investment readiness. In the GROUNDED section, show verified data: Company | Employees | Stage | Location | Scores. In the VC INTERPRETATION section, tell me which company you'd prioritize for DD and what questions you'd ask founders.",
+        "description": "Data + experienced DD prioritization",
     },
     {
         "label": "💰 Investment Thesis",
-        "prompt": "ONLY USING GROUNDED INFORMATION, which company has the strongest investment case? Create a comparison table with columns: Company | Bull Case (grounded) | Bear Case (grounded) | Confidence Level. Then give your top pick with specific evidence citations.",
-        "description": "Evidence-based recommendation",
+        "prompt": "Which company has the strongest investment case? In the GROUNDED section, compare: Company | Bull Case (from evidence) | Bear Case (from evidence). In the VC INTERPRETATION section, give me your gut feeling — which would you back and why?",
+        "description": "Evidence + VC conviction",
     },
 ]
 
@@ -159,24 +159,68 @@ def chat_with_vc_analyst(
 **User:** {user_message}
 
 ## Response Guidelines
-Provide a thoughtful, specific response based on the target companies above.
-Be direct and actionable. Reference specific companies by name when relevant.
 
-**IMPORTANT: When comparing companies or providing structured analysis, use markdown tables.**
-For example:
-| Company | Strength | Risk | Recommendation |
-|---------|----------|------|----------------|
-| Company A | Strong tech moat | Small TAM | Monitor |
-| Company B | Fast growth | Burn rate | Due diligence |
+Your response MUST have TWO clearly separated sections:
 
-Use tables whenever you're:
-- Comparing multiple companies
-- Listing pros/cons
-- Providing scores or rankings
-- Summarizing due diligence items
-- Showing competitive analysis
+### 📊 SECTION 1: GROUNDED ANALYSIS
+Based ONLY on the verified data and evidence provided above.
+- Only cite facts that appear in the grounded evidence
+- Use exact quotes when available
+- If data is missing, say "No grounded data available"
+- Be conservative — don't extrapolate beyond the evidence
 
-Tables make your analysis easier to scan and act upon.
+### 💡 SECTION 2: VC INTERPRETATION (Ungrounded)
+Your expert opinion as a seasoned VC with 15+ years experience.
+- Pattern matching from your experience with similar companies
+- Market intuition and timing insights
+- Red flags or opportunities you'd investigate further
+- What you'd ask in a founder meeting
+- Gut feeling on the opportunity
+
+**IMPORTANT: Always clearly label which section is which.**
+Use these exact headers:
+- "## 📊 Grounded Analysis" 
+- "## 💡 VC Interpretation"
+
+## ⚠️ MANDATORY: USE TABLES FOR EVERYTHING
+
+**YOU MUST USE MARKDOWN TABLES IN BOTH SECTIONS. THIS IS NOT OPTIONAL.**
+
+Tables are required for:
+- Comparing companies (ALWAYS)
+- Listing strengths/weaknesses
+- Showing scores or rankings
+- Summarizing findings
+- Due diligence items
+- Risk assessment
+- Any list of 2+ items
+
+**EVERY response should have at least one table per section.**
+
+Example table formats to use:
+
+**For Grounded Analysis:**
+| Company | Employees | Stage | Location | Evidence Quote |
+|---------|-----------|-------|----------|----------------|
+| Company A | 45 | Series A | Dubai | "raised $5M in 2024" |
+
+**For VC Interpretation:**
+| Company | My Take | Risk Level | Action |
+|---------|---------|------------|--------|
+| Company A | Strong PMF signals | Medium | Priority DD |
+
+**For Rankings:**
+| Rank | Company | Score | Key Reason |
+|------|---------|-------|------------|
+| 1 | Company A | 4.2/5 | Best moat |
+
+**For Due Diligence:**
+| Company | Question to Ask | Why It Matters |
+|---------|-----------------|----------------|
+| Company A | Unit economics? | Validate margins |
+
+Tables make your analysis scannable, actionable, and professional.
+Do NOT write long paragraphs when a table would be clearer.
 """
 
     try:
