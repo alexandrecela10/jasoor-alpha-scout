@@ -610,11 +610,12 @@ with st.sidebar:
         seed_company = "Inbound Candidates"  # For reports
         inbound_source = st.radio(
             "Candidate source:",
-            options=["demo", "websites", "pitchdeck"],
+            options=["demo", "websites", "pitchdeck", "folder"],
             format_func=lambda x: {
                 "demo": "📋 Use demo candidates (4 MENA startups)",
                 "websites": "🌐 Enter company website URLs",
                 "pitchdeck": "📄 Paste pitchdeck text",
+                "folder": "📁 Load from folder (coming soon)",
             }[x],
             help="Choose how to load your inbound candidates.",
         )
@@ -643,6 +644,17 @@ with st.sidebar:
                 placeholder="Paste the pitch, executive summary, or key slide content here...",
                 help="Gemini will extract structured data from this text.",
             )
+        elif inbound_source == "folder":
+            st.info("📁 **Load from Folder** — Connect to your deal filing system")
+            folder_path = st.text_input(
+                "Folder path:",
+                value="",
+                placeholder="/path/to/pitchdecks or s3://bucket/deals",
+                disabled=True,
+                help="Coming soon: Load pitchdecks from local folder, Google Drive, S3, or CRM export"
+            )
+            st.caption("*Future integrations: Google Drive, Dropbox, S3, Affinity CRM, Notion, Airtable*")
+            st.warning("🚧 This feature is coming soon. Use demo, websites, or pitchdeck for now.")
 
     st.divider()
 
@@ -843,8 +855,51 @@ with st.sidebar:
         # Inbound mode: still allow industry exclusion
         excluded_industries = []
     
-    # Global industry exclusion for ALL modes (including inbound)
+    # Filters for Inbound mode (same as other modes but shown separately)
     if scout_mode == "inbound":
+        st.markdown("**🎯 Eligibility Filters**")
+        st.caption("*Filter inbound candidates by location, stage, and size*")
+        
+        with st.expander("👥 Company Size Filter", expanded=True):
+            st.caption("*Filter out large companies — we want early-stage startups*")
+            enable_size_filter = st.checkbox(
+                "Enable company size filter",
+                value=True,
+                help="Filter out companies with more than the specified number of employees",
+                key="inbound_size_filter"
+            )
+            max_employees = st.slider(
+                "Maximum employees:",
+                min_value=10, max_value=500, value=DEFAULT_MAX_EMPLOYEES,
+                help="Companies larger than this will be filtered out. Default: 100",
+                disabled=not enable_size_filter,
+                key="inbound_max_employees"
+            )
+            if enable_size_filter:
+                st.info(f"⚠️ Companies with >{max_employees} employees will be filtered out")
+        
+        with st.expander("📍 MENA Location Filter", expanded=True):
+            st.caption("*Only include companies headquartered in MENA region*")
+            mena_only = st.checkbox(
+                "MENA headquarters only",
+                value=True,
+                help="Filter out companies not headquartered in Middle East & North Africa",
+                key="inbound_mena_only"
+            )
+            if mena_only:
+                st.info("⚠️ Only companies in UAE, Saudi Arabia, Egypt, Jordan, etc. will be included")
+        
+        with st.expander("🚀 Funding Stage Filter", expanded=True):
+            st.caption("*Only include early-stage companies (Series B and before)*")
+            early_stage_only = st.checkbox(
+                "Series B and earlier only",
+                value=True,
+                help="Filter out Series C, D, E, IPO, and public companies",
+                key="inbound_early_stage"
+            )
+            if early_stage_only:
+                st.info("⚠️ Only Pre-seed, Seed, Series A, Series B companies will be included")
+        
         with st.expander("🏭 Industry Exclusion Filter"):
             st.caption("*Exclude companies in specific industries/sectors*")
             excluded_industries_text = st.text_area(
