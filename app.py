@@ -52,7 +52,7 @@ from reporting import (
     send_email_report,
 )
 from reviewer import run_full_review, ReviewResult
-from tracing import flush_langfuse, evaluate_enrichment_batch, evaluate_with_llm_judge, create_trace, check_langfuse_config, get_langfuse
+from tracing import flush_langfuse, evaluate_enrichment_batch, evaluate_with_llm_judge, create_trace
 from persistence import (
     init_db, save_search, load_search, load_search_by_share_id, list_searches, delete_search,
     add_to_target_list, get_target_list, remove_from_target_list, is_in_target_list,
@@ -338,34 +338,6 @@ with st.sidebar:
     st.markdown('<p class="jasoor-subtitle">For the courageous investor</p>', unsafe_allow_html=True)
 
     st.divider()
-    
-    # ── DEBUG: Langfuse Status ──────────────────────────────────────────────────
-    with st.expander("🔍 Debug: Langfuse Status", expanded=False):
-        # Initialize Langfuse client to check status
-        lf = get_langfuse()
-        config = check_langfuse_config()
-        
-        if config["client_initialized"]:
-            st.success("✅ Langfuse client initialized")
-        else:
-            st.error("❌ Langfuse client NOT initialized")
-        
-        st.json(config)
-        
-        if st.button("🧪 Send Test Trace"):
-            test_trace = create_trace(
-                name="test_trace",
-                input_data={"test": "hello"},
-                metadata={"source": "debug_button"},
-                user_id=st.session_state.langfuse_user_id,
-                session_id=st.session_state.langfuse_session_id,
-            )
-            if test_trace:
-                st.success(f"✅ Test trace created: {test_trace.id}")
-                flush_langfuse()
-                st.info("Flushed. Check Langfuse dashboard.")
-            else:
-                st.error("❌ Failed to create test trace")
     
     # ── LOAD PREVIOUS SEARCH ──────────────────────────────────────────────────
     with st.expander("📂 Load Previous Search", expanded=False):
