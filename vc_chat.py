@@ -48,21 +48,22 @@ Be specific to the companies provided — don't give generic advice.
 """
 
 # Suggested prompts that reflect common VC analyst questions
+# All prompts emphasize GROUNDED INFORMATION and table output
 SUGGESTED_PROMPTS = [
     {
-        "label": "🔍 Due Diligence Priorities",
-        "prompt": "Based on these target companies, what are the top 3 due diligence questions I should prioritize for each? What red flags should I watch for?",
-        "description": "Get prioritized DD checklist",
+        "label": "🏰 Moat Analysis",
+        "prompt": "ONLY USING GROUNDED INFORMATION from the evidence provided, analyze the competitive moat of each target company. Create a table ranking them by moat strength (1-5) with columns: Company | Moat Type | Moat Score | Key Evidence | Why This Score. Be specific — cite the exact grounded evidence.",
+        "description": "Rank companies by moat strength",
     },
     {
-        "label": "📊 Competitive Analysis",
-        "prompt": "How do these companies compare to each other and to known players in their markets? Which has the strongest competitive moat and why?",
-        "description": "Compare targets & market position",
+        "label": "📊 Due Diligence Ranking",
+        "prompt": "ONLY USING GROUNDED INFORMATION, rank these companies by investment readiness. Create a table with columns: Company | Grounding Score | Key Strengths (from evidence) | Red Flags | DD Priority (High/Med/Low). Only cite facts that are verified in the grounded evidence.",
+        "description": "Prioritized DD based on evidence",
     },
     {
         "label": "💰 Investment Thesis",
-        "prompt": "If you had to pick ONE company from my target list to invest in today, which would it be and why? What's the bull case and bear case?",
-        "description": "Get investment recommendation",
+        "prompt": "ONLY USING GROUNDED INFORMATION, which company has the strongest investment case? Create a comparison table with columns: Company | Bull Case (grounded) | Bear Case (grounded) | Confidence Level. Then give your top pick with specific evidence citations.",
+        "description": "Evidence-based recommendation",
     },
 ]
 
@@ -74,7 +75,13 @@ def build_target_context(targets: List[Dict]) -> str:
     Includes all relevant data: scores, grounding, company info.
     """
     if not targets:
-        return "No companies in target list yet."
+        return """No companies in target list yet.
+
+IMPORTANT: The user has not added any companies to their target list.
+You cannot analyze companies that don't exist. Please tell the user:
+"I don't have any companies to analyze yet. Please add companies to your target list first by clicking the '➕ Add' button next to companies in your search results."
+
+Do NOT create empty tables or make up company data."""
     
     context = f"## Target List ({len(targets)} companies)\n\n"
     
@@ -109,6 +116,8 @@ def chat_with_vc_analyst(
     user_message: str,
     chat_history: List[Dict] = None,
     targets: List[Dict] = None,
+    use_thinking_model: bool = False,
+    return_prompt: bool = False,
 ) -> str:
     """
     Send a message to the VC Analyst and get a response.
@@ -117,9 +126,11 @@ def chat_with_vc_analyst(
         user_message: The user's question or prompt
         chat_history: Previous messages in the conversation
         targets: Target companies (if None, fetches from database)
+        use_thinking_model: If True, use slower but more thorough model
+        return_prompt: If True, return (response, full_prompt) tuple
     
     Returns:
-        The analyst's response as a string
+        The analyst's response as a string, or (response, prompt) if return_prompt=True
     """
     if targets is None:
         targets = get_target_list()
@@ -147,22 +158,46 @@ def chat_with_vc_analyst(
 ## Current Question
 **User:** {user_message}
 
-Provide a thoughtful, specific response based on the target companies above. 
+## Response Guidelines
+Provide a thoughtful, specific response based on the target companies above.
 Be direct and actionable. Reference specific companies by name when relevant.
+
+**IMPORTANT: When comparing companies or providing structured analysis, use markdown tables.**
+For example:
+| Company | Strength | Risk | Recommendation |
+|---------|----------|------|----------------|
+| Company A | Strong tech moat | Small TAM | Monitor |
+| Company B | Fast growth | Burn rate | Due diligence |
+
+Use tables whenever you're:
+- Comparing multiple companies
+- Listing pros/cons
+- Providing scores or rankings
+- Summarizing due diligence items
+- Showing competitive analysis
+
+Tables make your analysis easier to scan and act upon.
 """
 
     try:
+        # Fast model (default): Quick responses for simple questions
+        # Thinking model: Slower but more thorough analysis
         response = call_gemini(
             prompt=prompt,
             trace=None,
             span_name="vc_analyst_chat",
-            metadata={"targets_count": len(targets)},
-            use_pro_model=True,  # Use strongest model for quality advice
+            metadata={"targets_count": len(targets), "model_type": "thinking" if use_thinking_model else "fast"},
+            use_pro_model=use_thinking_model,  # Pro model for thinking, Flash for fast
         )
+        if return_prompt:
+            return response, prompt
         return response
     except Exception as e:
         logger.error(f"VC Analyst chat failed: {e}")
-        return f"I apologize, but I encountered an error: {str(e)}. Please try again."
+        error_msg = f"I apologize, but I encountered an error: {str(e)}. Please try again."
+        if return_prompt:
+            return error_msg, prompt
+        return error_msg
 
 
 def get_suggested_prompts() -> List[Dict]:

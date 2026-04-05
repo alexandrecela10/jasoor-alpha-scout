@@ -36,13 +36,15 @@ from reporting import (
     send_email_report,
 )
 from reviewer import run_full_review, ReviewResult
-from tracing import flush_langfuse
+from tracing import flush_langfuse, evaluate_enrichment_batch, evaluate_with_llm_judge, create_trace
 from persistence import (
     init_db, save_search, load_search, load_search_by_share_id, list_searches, delete_search,
     add_to_target_list, get_target_list, remove_from_target_list, is_in_target_list,
     schedule_search, get_scheduled_searches, delete_scheduled_search, toggle_scheduled_search,
+    save_feedback,
 )
 from vc_chat import chat_with_vc_analyst, get_suggested_prompts
+from source_enrichment import enrich_search_results, CompanyEnrichment, DEFAULT_MAX_EMPLOYEES
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -71,10 +73,17 @@ st.markdown("""
         background: #0f0f23 !important;
     }
     
-    /* Sidebar styling - slightly lighter navy */
+    /* Sidebar styling - slightly lighter navy, wider by default */
     [data-testid="stSidebar"] {
         background: #12122a !important;
         border-right: 1px solid #2a2a4a;
+        min-width: 380px !important;
+        width: 380px !important;
+    }
+    
+    /* Make sidebar content area wider */
+    [data-testid="stSidebar"] > div:first-child {
+        width: 380px !important;
     }
     
     /* All text white by default */
@@ -305,6 +314,41 @@ with st.sidebar:
     st.markdown('<p class="jasoor-title">ALPHA SCOUT</p>', unsafe_allow_html=True)
     st.markdown('<p class="jasoor-subtitle">For the courageous investor</p>', unsafe_allow_html=True)
 
+    st.divider()
+    
+    # ── LOAD PREVIOUS SEARCH ──────────────────────────────────────────────────
+    with st.expander("📂 Load Previous Search", expanded=False):
+        st.caption("*Pick up where you left off*")
+        
+        recent_searches = list_searches(limit=10)
+        if recent_searches:
+            # Format search options for display
+            search_options = {
+                s["id"]: f"{s['benchmark_label']} — {s['num_results']} results ({s['created_at'][:10]})"
+                for s in recent_searches
+            }
+            
+            selected_search_id = st.selectbox(
+                "Recent searches:",
+                options=list(search_options.keys()),
+                format_func=lambda x: search_options[x],
+                key="load_search_select",
+            )
+            
+            if st.button("📂 Load Search", key="load_search_btn", use_container_width=True):
+                loaded = load_search(selected_search_id)
+                if loaded:
+                    st.session_state.search_results = loaded["search_results"]
+                    st.session_state.scored_companies = loaded["scored_companies"]
+                    st.session_state.current_search_id = selected_search_id
+                    st.session_state.search_complete = True
+                    st.toast(f"✅ Loaded: {loaded['metadata']['benchmark_label']}")
+                    st.rerun()
+                else:
+                    st.error("Failed to load search")
+        else:
+            st.info("No previous searches yet. Run a search to save it.")
+    
     st.divider()
 
     # ── MODE SELECTOR ──────────────────────────────────────────────────────
@@ -558,7 +602,57 @@ with st.sidebar:
             )
             custom_sources = [s.strip() for s in sources_text.split("\n") if s.strip()]
 
-        with st.expander("🚫 Information Exclusion"):
+        with st.expander("📅 Source Freshness Filter"):
+            st.caption("*Only include recent sources to avoid stale information*")
+            max_source_age = st.slider(
+                "Maximum source age (days):",
+                min_value=7, max_value=90, value=14,
+                help="Sources older than this will be filtered out. Default: 14 days (2 weeks)"
+            )
+            show_source_dates = st.checkbox("Show source dates in results", value=True)
+        
+        with st.expander("👥 Company Size Filter", expanded=True):
+            st.caption("*Filter out large companies — we want early-stage startups*")
+            enable_size_filter = st.checkbox(
+                "Enable company size filter",
+                value=True,
+                help="Filter out companies with more than the specified number of employees"
+            )
+            max_employees = st.slider(
+                "Maximum employees:",
+                min_value=10, max_value=500, value=DEFAULT_MAX_EMPLOYEES,
+                help="Companies larger than this will be filtered out. Default: 100",
+                disabled=not enable_size_filter,
+            )
+            enrich_with_linkedin = st.checkbox(
+                "Enrich with LinkedIn data",
+                value=True,
+                help="Search LinkedIn for verified employee count, location, and founders"
+            )
+            if enable_size_filter:
+                st.info(f"⚠️ Companies with >{max_employees} employees will be filtered out")
+        
+        with st.expander("📍 MENA Location Filter", expanded=True):
+            st.caption("*Only include companies headquartered in MENA region*")
+            mena_only = st.checkbox(
+                "MENA headquarters only",
+                value=True,
+                help="Filter out companies not headquartered in Middle East & North Africa"
+            )
+            if mena_only:
+                st.info("⚠️ Only companies in UAE, Saudi Arabia, Egypt, Jordan, etc. will be included")
+        
+        with st.expander("🚀 Funding Stage Filter", expanded=True):
+            st.caption("*Only include early-stage companies (Series B and before)*")
+            early_stage_only = st.checkbox(
+                "Series B and earlier only",
+                value=True,
+                help="Filter out Series C, D, E, IPO, and public companies"
+            )
+            if early_stage_only:
+                st.info("⚠️ Only Pre-seed, Seed, Series A, Series B companies will be included")
+        
+        with st.expander("� Information Exclusion"):
             st.caption("*Exclude news types that signal the opportunity is gone*")
             col1, col2 = st.columns(2)
             with col1:
@@ -847,7 +941,46 @@ if search_button:
                     exclusions=all_exclusions,
                     max_results=max_results,
                 )
+                
+                # Source enrichment and filtering (size + MENA + stage)
+                filtered_out_companies = []
+                enrichments = {}
+                if enrich_with_linkedin and results:
+                    st.write("🔗 Enriching with website, LinkedIn, and funding data...")
+                    
+                    # Create trace for Langfuse evaluation
+                    enrichment_trace = create_trace(
+                        name="source_enrichment",
+                        input_data={"company_count": len(results), "seed": benchmark_label},
+                        metadata={"mode": scout_mode}
+                    )
+                    trace_id = enrichment_trace.id if enrichment_trace else None
+                    
+                    results, filtered_out_companies, enrichments = enrich_search_results(
+                        results,
+                        max_employees=max_employees if enable_size_filter else 9999,
+                        mena_only=mena_only,
+                        early_stage_only=early_stage_only,
+                    )
+                    
+                    # Run Langfuse evaluations
+                    if enrichments:
+                        st.write("📊 Evaluating enrichment quality...")
+                        metrics = evaluate_enrichment_batch(trace_id, enrichments, results)
+                        st.session_state.enrichment_metrics = metrics
+                    
+                    if filtered_out_companies:
+                        filter_reasons = []
+                        if enable_size_filter:
+                            filter_reasons.append(f">{max_employees} employees")
+                        if mena_only:
+                            filter_reasons.append("non-MENA HQ")
+                        if early_stage_only:
+                            filter_reasons.append("later than Series B")
+                        st.write(f"⚠️ Filtered out {len(filtered_out_companies)} companies ({', '.join(filter_reasons)})")
+                
                 st.session_state.search_results = results
+                st.session_state.filtered_out = filtered_out_companies
                 st.session_state.search_complete = True
                 status.update(label=f"✅ Found {len(results)} companies", state="complete")
             except Exception as e:
@@ -883,7 +1016,45 @@ if search_button:
                             results.append(r)
 
                 if results:
+                    # Apply same enrichment as other modes (website, LinkedIn, stage)
+                    filtered_out_companies = []
+                    enrichments = {}
+                    if enrich_with_linkedin:
+                        st.write("🔗 Enriching with website, LinkedIn, and funding data...")
+                        
+                        # Create trace for Langfuse evaluation
+                        enrichment_trace = create_trace(
+                            name="source_enrichment",
+                            input_data={"company_count": len(results), "source": inbound_source},
+                            metadata={"mode": "inbound"}
+                        )
+                        trace_id = enrichment_trace.id if enrichment_trace else None
+                        
+                        results, filtered_out_companies, enrichments = enrich_search_results(
+                            results,
+                            max_employees=max_employees if enable_size_filter else 9999,
+                            mena_only=mena_only,
+                            early_stage_only=early_stage_only,
+                        )
+                        
+                        # Run Langfuse evaluations
+                        if enrichments:
+                            st.write("📊 Evaluating enrichment quality...")
+                            metrics = evaluate_enrichment_batch(trace_id, enrichments, results)
+                            st.session_state.enrichment_metrics = metrics
+                        
+                        if filtered_out_companies:
+                            filter_reasons = []
+                            if enable_size_filter:
+                                filter_reasons.append(f">{max_employees} employees")
+                            if mena_only:
+                                filter_reasons.append("non-MENA HQ")
+                            if early_stage_only:
+                                filter_reasons.append("later than Series B")
+                            st.write(f"⚠️ Filtered out {len(filtered_out_companies)} companies ({', '.join(filter_reasons)})")
+                    
                     st.session_state.search_results = results
+                    st.session_state.filtered_out = filtered_out_companies
                     st.session_state.search_complete = True
                     status.update(label=f"✅ Loaded {len(results)} candidates", state="complete")
                 else:
@@ -1042,12 +1213,66 @@ if st.session_state.scoring_complete and st.session_state.scored_companies:
         st.warning(f"⚠️ **Grounding Notice:** {ungrounded_count}/{total_companies} companies have low grounding scores. Only showing verified data — ungrounded scores are nullified.")
     else:
         st.success(f"✅ **All {total_companies} companies are well-grounded** — data verified against sources.")
+    
+    # Show enrichment quality metrics (from Langfuse evaluations)
+    if st.session_state.get("enrichment_metrics"):
+        metrics = st.session_state.enrichment_metrics
+        with st.expander("📊 Enrichment Quality Metrics (Langfuse)", expanded=False):
+            col1, col2, col3, col4, col5 = st.columns(5)
+            with col1:
+                st.metric("Valid Website", f"{metrics.get('valid_website', 0):.0%}")
+            with col2:
+                st.metric("Right Website", f"{metrics.get('right_website', 0):.0%}")
+            with col3:
+                st.metric("Employee Count", f"{metrics.get('employee_count_rate', 0):.0%}")
+            with col4:
+                st.metric("Stage Found", f"{metrics.get('stage_found_rate', 0):.0%}")
+            with col5:
+                st.metric("MENA Location", f"{metrics.get('location_mena_rate', 0):.0%}")
+            st.caption("*These metrics are logged to Langfuse for tracking enrichment quality over time.*")
 
     # Tabs for different views
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 2x2 Matrix", "📋 Comparison Table", "📝 Detailed Report", "📎 Appendix"])
+    tab1, tab2, tab3, tab4 = st.tabs([" Comparison Table", "📊 2x2 Matrix", "📝 Detailed Report", "📎 Appendix"])
 
-    # --- Tab 1: 2x2 Matrix ---
+    # --- Tab 1: Comparison Table ---
     with tab1:
+        col_title, col_export = st.columns([3, 1])
+        with col_title:
+            st.subheader("Side-by-Side Comparison")
+        with col_export:
+            # Export to Excel button (placeholder for now)
+            if st.button("📥 Export to Excel", key="export_excel", use_container_width=True):
+                st.toast("📥 Excel export coming soon! For now, copy the table below.")
+                st.info("**Coming soon:** Full Excel export with all company data, scores, and evidence.")
+
+        markdown_table = generate_markdown_table(
+            seed_company=seed_company,
+            scored_companies=scored_companies,
+            top_n=10,
+        )
+        st.markdown(markdown_table)
+        
+        # Quick links to company websites
+        st.markdown("#### 🔗 Quick Links — Research Further")
+        cols = st.columns(min(5, len(scored_companies)))
+        for i, company in enumerate(scored_companies[:5]):
+            with cols[i]:
+                website = company.search_result.website
+                if website and website != "Not Found":
+                    st.link_button(
+                        f"🌐 {company.search_result.name[:15]}...",
+                        url=website,
+                        use_container_width=True,
+                    )
+                else:
+                    st.button(
+                        f"❌ {company.search_result.name[:15]}...",
+                        disabled=True,
+                        use_container_width=True,
+                    )
+
+    # --- Tab 2: 2x2 Matrix ---
+    with tab2:
         st.subheader("Company Positioning Matrix")
 
         # Axis selectors
@@ -1086,72 +1311,119 @@ if st.session_state.scoring_complete and st.session_state.scored_companies:
             "Dot color = average score across all dimensions."
         )
 
-    # --- Tab 2: Comparison Table ---
-    with tab2:
-        st.subheader("Side-by-Side Comparison")
-
-        markdown_table = generate_markdown_table(
-            seed_company=seed_company,
-            scored_companies=scored_companies,
-            top_n=10,
-        )
-        st.markdown(markdown_table)
+    # --- Shared section below tabs: Add to Target List ---
+    st.markdown("---")
+    st.markdown("### 🎯 Add to Target List")
+    st.caption("*Save companies to track — news alerts coming soon*")
+    
+    for company in scored_companies:
+        sr = company.search_result
+        already_in_list = is_in_target_list(sr.name)
         
-        # Quick links to company websites
-        st.markdown("#### 🔗 Quick Links — Research Further")
-        cols = st.columns(min(5, len(scored_companies)))
-        for i, company in enumerate(scored_companies[:5]):
-            with cols[i]:
-                website = company.search_result.website
-                if website and website != "Not Found":
-                    st.link_button(
-                        f"🌐 {company.search_result.name[:15]}...",
-                        url=website,
-                        use_container_width=True,
-                    )
-                else:
-                    st.button(
-                        f"❌ {company.search_result.name[:15]}...",
-                        disabled=True,
-                        use_container_width=True,
-                    )
-        
-        # --- Add to Target List ---
-        st.markdown("---")
-        st.markdown("### 🎯 Add to Target List")
-        st.caption("*Save companies to track — news alerts coming soon*")
-        
-        for company in scored_companies:
-            sr = company.search_result
-            already_in_list = is_in_target_list(sr.name)
+        col1, col2, col3 = st.columns([3, 1, 1])
+        with col1:
+            avg_score = sum(s.score for s in company.scores.values() if s.score) / max(len([s for s in company.scores.values() if s.score]), 1)
             
-            col1, col2, col3 = st.columns([3, 1, 1])
-            with col1:
-                avg_score = sum(s.score for s in company.scores.values() if s.score) / max(len([s for s in company.scores.values() if s.score]), 1)
-                st.markdown(f"**{sr.name}** — {sr.sector} | Avg: {avg_score:.1f}/5")
-            with col2:
-                if already_in_list:
-                    st.success("✓ Saved", icon="✅")
-                else:
-                    if st.button("➕ Add", key=f"add_target_{sr.name}", use_container_width=True):
-                        add_to_target_list(company)
-                        st.toast(f"🎯 Added {sr.name} to target list!")
-                        st.rerun()
-            with col3:
-                if sr.website and sr.website != "Not Found":
-                    st.link_button("🌐", url=sr.website, use_container_width=True)
-
-        # ABSOLUTE GROUNDING: Expandable evidence section per company
-        st.markdown("---")
-        st.markdown("### � Grounded Evidence (Deterministic Proof)")
-        st.caption("*Every claim below is validated via exact string matching — no AI interpretation.*")
-        
-        for company in scored_companies[:5]:
-            sr = company.search_result
-            grounding_score = getattr(sr, 'grounding_score', 0.0)
-            grounding_icon = "✅" if grounding_score >= 0.7 else "⚠️" if grounding_score >= 0.4 else "❌"
+            # Build display string — only show location if it exists
+            display_parts = [f"**{sr.name}**"]
+            if sr.sector and sr.sector != "Not Found":
+                display_parts.append(sr.sector)
+            if sr.location and sr.location != "Not Found":
+                display_parts.append(f"📍 {sr.location}")
+            display_parts.append(f"Avg: {avg_score:.1f}/5")
             
-            with st.expander(f"{grounding_icon} **{sr.name}** — Grounding: {grounding_score:.0%}"):
+            # Add source enrichment info if available
+            source_data = sr.grounded_evidence.get("source_enrichment", {}) if hasattr(sr, 'grounded_evidence') else {}
+            if source_data:
+                emp_data = source_data.get("employee_count", {})
+                if emp_data and emp_data.get("value"):
+                    display_parts.append(f"👥 {emp_data['value']}")
+                # Show source count for confidence
+                source_count = sum(1 for k, v in source_data.items() if isinstance(v, dict) and v.get("source_count", 0) > 0)
+                if source_count > 0:
+                    display_parts.append(f"📚 {source_count} sources")
+            
+            st.markdown(" — ".join(display_parts))
+        with col2:
+            if already_in_list:
+                st.success("✓ Saved", icon="✅")
+            else:
+                if st.button("➕ Add", key=f"add_target_{sr.name}", use_container_width=True):
+                    add_to_target_list(company)
+                    st.toast(f"🎯 Added {sr.name} to target list!")
+                    st.rerun()
+        with col3:
+            if sr.website and sr.website != "Not Found":
+                st.link_button("🌐", url=sr.website, use_container_width=True)
+    
+    # --- Feedback Buttons ---
+    st.markdown("---")
+    st.markdown("### 👍👎 Rate Results")
+    st.caption("*Your feedback helps improve future searches*")
+    
+    for company in scored_companies:
+        sr = company.search_result
+        avg_score = sum(s.score for s in company.scores.values() if s.score) / max(len([s for s in company.scores.values() if s.score]), 1)
+        
+        # Website verification badge
+        website_badge = ""
+        if hasattr(sr, 'website_verified') and sr.website_verified:
+            website_badge = "🔗✅"
+        elif sr.website and sr.website != "Not Found":
+            website_badge = "🔗⚠️"
+        
+        col1, col2, col3, col4 = st.columns([4, 1, 1, 1])
+        with col1:
+            st.markdown(f"**{sr.name}** {website_badge} — Score: {avg_score:.1f}/5")
+        with col2:
+            if st.button("👍", key=f"like_{sr.name}", help="Good result"):
+                save_feedback(
+                    feedback_type="company",
+                    item_type="search_result",
+                    is_positive=True,
+                    item_id=sr.name,
+                    item_content=sr.description,
+                    search_id=st.session_state.get("current_search_id"),
+                    company_name=sr.name,
+                )
+                st.toast(f"👍 Thanks for the feedback on {sr.name}!")
+        with col3:
+            if st.button("👎", key=f"dislike_{sr.name}", help="Bad result"):
+                save_feedback(
+                    feedback_type="company",
+                    item_type="search_result",
+                    is_positive=False,
+                    item_id=sr.name,
+                    item_content=sr.description,
+                    search_id=st.session_state.get("current_search_id"),
+                    company_name=sr.name,
+                )
+                st.toast(f"👎 Thanks — we'll improve!")
+        with col4:
+            # Source feedback
+            if st.button("📰❌", key=f"bad_source_{sr.name}", help="Bad source"):
+                save_feedback(
+                    feedback_type="source",
+                    item_type="source_url",
+                    is_positive=False,
+                    item_id=sr.source_url,
+                    item_content=sr.source_snippet[:200],
+                    search_id=st.session_state.get("current_search_id"),
+                    company_name=sr.name,
+                )
+                st.toast(f"📰 Source flagged — thanks!")
+
+    # ABSOLUTE GROUNDING: Expandable evidence section per company
+    st.markdown("---")
+    st.markdown("### 🔍 Grounded Evidence (Deterministic Proof)")
+    st.caption("*Every claim below is validated via exact string matching — no AI interpretation.*")
+    
+    for company in scored_companies[:5]:
+        sr = company.search_result
+        grounding_score = getattr(sr, 'grounding_score', 0.0)
+        grounding_icon = "✅" if grounding_score >= 0.7 else "⚠️" if grounding_score >= 0.4 else "❌"
+        
+        with st.expander(f"{grounding_icon} **{sr.name}** — Grounding: {grounding_score:.0%}"):
                 # Grounding score banner
                 score_color = "#d4edda" if grounding_score >= 0.7 else "#fff3cd" if grounding_score >= 0.4 else "#f8d7da"
                 st.markdown(f"""
@@ -1161,19 +1433,85 @@ if st.session_state.scoring_complete and st.session_state.scored_companies:
                 </div>
                 """, unsafe_allow_html=True)
                 
+                # Source enrichment data (website + LinkedIn)
+                source_data = sr.grounded_evidence.get("source_enrichment", {}) if hasattr(sr, 'grounded_evidence') else {}
+                if source_data:
+                    st.markdown("#### 📚 Multi-Source Enrichment")
+                    
+                    # Website
+                    website_info = source_data.get("website_url", {})
+                    if website_info and website_info.get("value"):
+                        confidence = website_info.get("confidence", 0)
+                        conf_icon = "✅" if confidence >= 0.7 else "⚠️" if confidence >= 0.4 else "❓"
+                        st.markdown(f"- **Website:** {conf_icon} [{website_info['value'][:50]}...]({website_info['value']})")
+                        # Show sources
+                        for src in website_info.get("sources", [])[:2]:
+                            verified = "✓" if src.get("verified") else "?"
+                            st.markdown(f"  - Source [{verified}]: {src.get('quote', '')[:100]}...")
+                    
+                    # LinkedIn
+                    linkedin_info = source_data.get("linkedin_url", {})
+                    if linkedin_info and linkedin_info.get("value"):
+                        st.markdown(f"- **LinkedIn:** [{linkedin_info['value'][:50]}...]({linkedin_info['value']})")
+                    
+                    # Employee count with sources
+                    emp_info = source_data.get("employee_count", {})
+                    if emp_info and emp_info.get("value"):
+                        src_count = emp_info.get("source_count", 0)
+                        st.markdown(f"- **Employees:** {emp_info['value']} ({src_count} source{'s' if src_count != 1 else ''})")
+                    
+                    # Location with sources
+                    loc_info = source_data.get("location", {})
+                    if loc_info and loc_info.get("value"):
+                        src_count = loc_info.get("source_count", 0)
+                        conf = loc_info.get("confidence", 0)
+                        conf_icon = "✅" if conf >= 0.7 else "⚠️"
+                        st.markdown(f"- **Location:** {conf_icon} {loc_info['value']} ({src_count} source{'s' if src_count != 1 else ''})")
+                    
+                    # Sector
+                    sector_info = source_data.get("sector", {})
+                    if sector_info and sector_info.get("value"):
+                        st.markdown(f"- **Sector:** {sector_info['value']}")
+                    
+                    # Founders
+                    founders_info = source_data.get("founders", {})
+                    if founders_info and founders_info.get("value"):
+                        st.markdown(f"- **Founders:** {founders_info['value']}")
+                
                 # Website validation
                 st.markdown("#### 🌐 Website Validation")
                 website_ev = sr.grounded_evidence.get("website", {}) if hasattr(sr, 'grounded_evidence') else {}
+                http_verification = sr.grounded_evidence.get("website_http_verification", {}) if hasattr(sr, 'grounded_evidence') else {}
+                
+                st.markdown(f"- **Claimed:** `{sr.website}`")
+                
+                # HTTP verification (actual website fetch)
+                if http_verification:
+                    exists = http_verification.get("exists", False)
+                    contains = http_verification.get("contains_company", False)
+                    page_title = http_verification.get("page_title", "")
+                    
+                    if exists and contains:
+                        st.markdown(f"- **HTTP Check:** ✅ Website exists and mentions company")
+                        if page_title:
+                            st.markdown(f"- **Page Title:** {page_title[:60]}...")
+                    elif exists:
+                        st.markdown(f"- **HTTP Check:** ⚠️ Website exists but doesn't mention '{sr.name}'")
+                        if page_title:
+                            st.markdown(f"- **Page Title:** {page_title[:60]}...")
+                    else:
+                        error = http_verification.get("error", "Unknown error")
+                        st.markdown(f"- **HTTP Check:** ❌ Website not accessible — {error}")
+                
+                # Text-based grounding
                 if website_ev:
                     is_valid = website_ev.get("is_grounded", False)
                     method = website_ev.get("validation_method", "unknown")
-                    st.markdown(f"- **Claimed:** `{sr.website}`")
-                    st.markdown(f"- **Status:** {'✅ GROUNDED' if is_valid else '❌ UNGROUNDED'}")
-                    st.markdown(f"- **Method:** {method}")
+                    st.markdown(f"- **Source Grounding:** {'✅ GROUNDED' if is_valid else '❌ UNGROUNDED'} ({method})")
                     if website_ev.get("matched_text"):
                         st.code(f"Matched: {website_ev['matched_text']}", language=None)
-                else:
-                    st.markdown(f"- **Website:** `{sr.website}` (no validation data)")
+                elif not http_verification:
+                    st.markdown(f"- **Status:** No validation data")
                 
                 # Company name validation
                 st.markdown("#### 🏢 Company Name Validation")
@@ -1341,76 +1679,114 @@ if st.session_state.scoring_complete and st.session_state.scored_companies:
             st.info("Review results will appear here after running a search.")
 
 # ---------------------------------------------------------------------------
-# VC Analyst Chat — Only for Target List Companies
+# VC Analyst Chat — Bonus Feature (Collapsed by Default)
+# Only shows when user has target companies
 # ---------------------------------------------------------------------------
 
 targets = get_target_list()
 if targets:
     st.divider()
-    st.markdown("## 🧠 Ask the VC Analyst")
-    st.caption("*Chat with a seasoned AI VC Analyst about your target companies*")
     
-    # Initialize chat history in session state
-    if "vc_chat_history" not in st.session_state:
-        st.session_state.vc_chat_history = []
-    
-    # Suggested prompts
-    st.markdown("**Quick prompts:**")
-    suggested = get_suggested_prompts()
-    cols = st.columns(3)
-    for i, prompt_data in enumerate(suggested):
-        with cols[i]:
-            if st.button(
-                prompt_data["label"],
-                key=f"suggested_{i}",
-                help=prompt_data["description"],
-                use_container_width=True,
-            ):
-                # Add user message and get response
-                user_msg = prompt_data["prompt"]
-                st.session_state.vc_chat_history.append({"role": "user", "content": user_msg})
-                
-                with st.spinner("🧠 Analyst is thinking..."):
-                    response = chat_with_vc_analyst(
-                        user_message=user_msg,
-                        chat_history=st.session_state.vc_chat_history[:-1],
-                        targets=targets,
-                    )
-                st.session_state.vc_chat_history.append({"role": "assistant", "content": response})
-                st.rerun()
-    
-    # Chat history display
-    if st.session_state.vc_chat_history:
-        st.markdown("---")
-        for msg in st.session_state.vc_chat_history:
-            if msg["role"] == "user":
-                st.markdown(f"**You:** {msg['content']}")
-            else:
-                st.markdown(f"**🧠 VC Analyst:**")
-                st.markdown(msg["content"])
-            st.markdown("")
-    
-    # Chat input
-    st.markdown("---")
-    user_input = st.chat_input("Ask the VC Analyst about your target companies...")
-    
-    if user_input:
-        st.session_state.vc_chat_history.append({"role": "user", "content": user_input})
+    # Collapsed expander — VC Chat is a BONUS, not the main feature
+    with st.expander("🧠 **Bonus: Ask the VC Analyst** — Get AI insights on your targets", expanded=False):
+        st.caption("*Chat with a seasoned AI VC Analyst about your target companies*")
+        st.markdown("🔒 *Local / Sovereign AI chat coming soon — fully protected, on-premise processing*")
         
-        with st.spinner("🧠 Analyst is thinking..."):
-            response = chat_with_vc_analyst(
-                user_message=user_input,
-                chat_history=st.session_state.vc_chat_history[:-1],
-                targets=targets,
+        # Model selection: Fast (default) vs Thinking
+        col_model1, col_model2, col_show = st.columns([2, 1, 1])
+        with col_model2:
+            use_thinking = st.toggle(
+                "🧠 Thinking",
+                value=False,
+                help="Fast mode (default): Quick responses. Thinking mode: Slower but more thorough analysis."
             )
-        st.session_state.vc_chat_history.append({"role": "assistant", "content": response})
-        st.rerun()
-    
-    # Clear chat button
-    if st.session_state.vc_chat_history:
-        if st.button("🗑️ Clear Chat", key="clear_chat"):
+        with col_show:
+            show_prompt = st.toggle(
+                "📝 Show Prompt",
+                value=False,
+                help="Show the full prompt being sent to the AI"
+            )
+        with col_model1:
+            if use_thinking:
+                st.info("🧠 **Thinking Mode** — Deeper analysis")
+            else:
+                st.caption("⚡ **Fast Mode** — Quick responses")
+        
+        # Initialize chat history in session state
+        if "vc_chat_history" not in st.session_state:
             st.session_state.vc_chat_history = []
+        if "vc_last_prompt" not in st.session_state:
+            st.session_state.vc_last_prompt = ""
+        
+        # Suggested prompts with descriptions
+        st.markdown("**Quick analysis (grounded data only):**")
+        suggested = get_suggested_prompts()
+        cols = st.columns(3)
+        for i, prompt_data in enumerate(suggested):
+            with cols[i]:
+                if st.button(
+                    prompt_data["label"],
+                    key=f"suggested_{i}",
+                    help=f"{prompt_data['description']}\n\nPrompt: {prompt_data['prompt'][:100]}...",
+                    use_container_width=True,
+                ):
+                    # Add user message and get response
+                    user_msg = prompt_data["prompt"]
+                    st.session_state.vc_chat_history.append({"role": "user", "content": user_msg})
+                    
+                    with st.spinner("🧠 Analyst is thinking..." if use_thinking else "⚡ Getting response..."):
+                        response, full_prompt = chat_with_vc_analyst(
+                            user_message=user_msg,
+                            chat_history=st.session_state.vc_chat_history[:-1],
+                            targets=targets,
+                            use_thinking_model=use_thinking,
+                            return_prompt=True,
+                        )
+                    st.session_state.vc_chat_history.append({"role": "assistant", "content": response})
+                    st.session_state.vc_last_prompt = full_prompt
+                    st.rerun()
+        
+        # Show prompt if toggled
+        if show_prompt and st.session_state.vc_last_prompt:
+            with st.expander("📝 Full Prompt Sent to AI", expanded=False):
+                st.code(st.session_state.vc_last_prompt, language="markdown")
+        
+        # Chat history display
+        if st.session_state.vc_chat_history:
+            st.markdown("---")
+            for msg in st.session_state.vc_chat_history:
+                if msg["role"] == "user":
+                    st.markdown(f"**You:** {msg['content']}")
+                else:
+                    st.markdown(f"**🧠 VC Analyst:**")
+                    st.markdown(msg["content"])
+                st.markdown("")
+        
+        # Chat input
+        st.markdown("---")
+        user_input = st.chat_input("Ask the VC Analyst about your target companies...")
+        
+        if user_input:
+            st.session_state.vc_chat_history.append({"role": "user", "content": user_input})
+            
+            with st.spinner("🧠 Analyst is thinking..." if use_thinking else "⚡ Getting response..."):
+                response, full_prompt = chat_with_vc_analyst(
+                    user_message=user_input,
+                    chat_history=st.session_state.vc_chat_history[:-1],
+                    targets=targets,
+                    use_thinking_model=use_thinking,
+                    return_prompt=True,
+                )
+            st.session_state.vc_chat_history.append({"role": "assistant", "content": response})
+            st.session_state.vc_last_prompt = full_prompt
             st.rerun()
+        
+        # Clear chat button
+        if st.session_state.vc_chat_history:
+            if st.button("🗑️ Clear Chat", key="clear_chat"):
+                st.session_state.vc_chat_history = []
+                st.session_state.vc_last_prompt = ""
+                st.rerun()
 
 else:
     # No results yet — show instructions

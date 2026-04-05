@@ -45,6 +45,9 @@ class SearchResult:
     grounded_evidence: Dict = field(default_factory=dict)
     grounding_score: float = 0.0            # Overall grounding confidence (0-1)
     raw_source_text: str = ""               # Full source text for re-validation
+    website_verified: bool = False          # True if website was verified via HTTP fetch
+    source_date: str = ""                   # Publication date of source (for recency filtering)
+    source_age_days: int = -1               # Age of source in days (-1 = unknown)
 
     def to_dict(self) -> Dict:
         """Convert to dict for JSON serialization / Streamlit display."""
@@ -65,6 +68,9 @@ class SearchResult:
                 for k, v in self.grounded_evidence.items()
             },
             "grounding_score": self.grounding_score,
+            "website_verified": self.website_verified,
+            "source_date": self.source_date,
+            "source_age_days": self.source_age_days,
         }
 
 

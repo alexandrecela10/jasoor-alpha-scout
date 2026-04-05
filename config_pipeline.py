@@ -170,8 +170,8 @@ DEFAULT_SOURCES = [
     "linkedin.com/company/startupbootcamp",  # Startup Bootcamp
     "linkedin.com/company/techstars",        # Techstars
     "linkedin.com/company/antler",           # Antler (active in MENA)
-    "linkedin.com/company/seedstars",        # Seedstars
-    "linkedin.com",                          # General LinkedIn
+    "linkedin.com/company/seedstars"     # Seedstars                         
+    
 ]
 
 

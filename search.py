@@ -26,6 +26,9 @@ from grounding import (
     compute_grounding_score,
     validate_company_name,
     validate_website_domain,
+    full_website_verification,
+    verify_source_content,
+    filter_sources_by_date,
 )
 
 logger = logging.getLogger(__name__)
@@ -465,7 +468,26 @@ Return ONLY the JSON array, no other text."""
             # Check website grounding (important — flag if wrong)
             website_evidence = evidence_map.get("website")
             website = item.get("website", "Not Found")
-            if website_evidence and not website_evidence.is_grounded:
+            website_verified = False
+            website_verification = None
+            
+            if website and website != "Not Found":
+                # ACTUAL HTTP VERIFICATION: Visit the website to confirm it exists
+                # and contains the company name (prevents hallucinated URLs)
+                try:
+                    website_verification = full_website_verification(website, company_name)
+                    website_verified = website_verification.exists and website_verification.contains_company
+                    
+                    if not website_verification.exists:
+                        logger.warning(f"WEBSITE DOES NOT EXIST: '{website}' for {company_name} — {website_verification.error}")
+                    elif not website_verification.contains_company:
+                        logger.warning(f"WEBSITE MISMATCH: '{website}' exists but doesn't mention '{company_name}'")
+                    else:
+                        logger.info(f"WEBSITE VERIFIED: '{website}' for {company_name} (title: {website_verification.page_title[:50]})")
+                except Exception as e:
+                    logger.warning(f"Website verification failed for {website}: {e}")
+            
+            if website_evidence and not website_evidence.is_grounded and not website_verified:
                 logger.warning(f"WEBSITE UNGROUNDED: '{website}' for {company_name}")
                 # Don't skip, but flag it — website might still be correct
             
@@ -480,6 +502,10 @@ Return ONLY the JSON array, no other text."""
             
             # Convert evidence objects to dicts for storage
             evidence_dict = {k: v.to_dict() for k, v in evidence_map.items()}
+            
+            # Add website verification to evidence if performed
+            if website_verification:
+                evidence_dict["website_http_verification"] = website_verification.to_dict()
             
             results.append(SearchResult(
                 name=company_name,
@@ -496,6 +522,7 @@ Return ONLY the JSON array, no other text."""
                 grounded_evidence=evidence_dict,
                 grounding_score=grounding_score,
                 raw_source_text=source_content[:2000],  # Store for re-validation
+                website_verified=website_verified,  # New field for HTTP verification result
             ))
             
             # Stop once we have enough validated results

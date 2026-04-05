@@ -37,16 +37,16 @@ def generate_markdown_table(
     """
     Generate a Markdown comparison table: seed company vs. targets.
 
-    Columns: Company | Location | Sector | Offer Power | Tech Moat | Sales | Founder | Website
+    Columns: Company | Employees | Stage | Location | Sector | Scores | Website
     """
-    # Header
+    # Header - now includes grounded employee count and funding stage
     md = f"## Comparison: {seed_company} vs. Similar Companies\n\n"
-    md += "| Company | Location | Sector | Offer | Tech | Sales | Founder | Website |\n"
-    md += "|---------|----------|--------|-------|------|-------|---------|--------|\n"
+    md += "| Company | 👥 Employees | 🚀 Stage | 📍 Location | Sector | Offer | Tech | Sales | Founder | Website |\n"
+    md += "|---------|-------------|----------|-------------|--------|-------|------|-------|---------|--------|\n"
 
     # Seed company row (from config)
     seed_data = PORTFOLIO_COMPANIES.get(seed_company, {})
-    md += f"| **{seed_company}** (Seed) | {seed_data.get('location', 'N/A')} | "
+    md += f"| **{seed_company}** (Seed) | — | — | {seed_data.get('location', 'N/A')} | "
     md += f"{seed_data.get('sector', 'N/A')} | — | — | — | — | "
     md += f"[Link]({seed_data.get('website', '#')}) |\n"
 
@@ -54,6 +54,23 @@ def generate_markdown_table(
     for company in scored_companies[:top_n]:
         sr = company.search_result
         scores = company.scores
+
+        # Get grounded employee count from enrichment
+        emp_str = "—"
+        stage_str = "—"
+        if hasattr(sr, 'grounded_evidence') and sr.grounded_evidence:
+            source_data = sr.grounded_evidence.get("source_enrichment", {})
+            if source_data:
+                emp_info = source_data.get("employee_count", {})
+                if emp_info and emp_info.get("value"):
+                    emp_str = str(emp_info["value"])
+                stage_info = source_data.get("funding_stage", {})
+                if stage_info and stage_info.get("value"):
+                    stage_str = stage_info["value"]
+        
+        # Fallback to SearchResult funding_stage if available
+        if stage_str == "—" and hasattr(sr, 'funding_stage') and sr.funding_stage:
+            stage_str = sr.funding_stage
 
         # Get score values, display "—" if None
         offer = scores.get("offer_power")
@@ -70,8 +87,41 @@ def generate_markdown_table(
         website = sr.website if sr.website != "Not Found" else "#"
         website_link = f"[Link]({website})" if website != "#" else "N/A"
 
-        md += f"| {sr.name} | {sr.location} | {sr.sector} | "
+        # Location - truncate if too long
+        location = sr.location if sr.location != "Not Found" else "—"
+        if len(location) > 20:
+            location = location[:18] + "..."
+
+        md += f"| {sr.name} | {emp_str} | {stage_str} | {location} | {sr.sector} | "
         md += f"{offer_str} | {tech_str} | {sales_str} | {founder_str} | {website_link} |\n"
+
+    # Add detailed evidence section below the table
+    md += "\n---\n\n"
+    md += "## 📋 Evidence & Sources\n\n"
+    
+    for company in scored_companies[:top_n]:
+        sr = company.search_result
+        scores = company.scores
+        
+        md += f"### {sr.name}\n\n"
+        
+        # Score evidence for each dimension
+        for dim_key, dim_label in [("offer_power", "Offer Power"), ("tech_moat", "Tech Moat"), 
+                                    ("sales_ability", "Sales Ability"), ("founder_strength", "Founder Strength")]:
+            score = scores.get(dim_key)
+            if score and score.score:
+                md += f"**{dim_label}** ({score.score}/5)\n"
+                if score.evidence_quote and score.evidence_quote != "N/A":
+                    # Truncate long quotes
+                    quote = score.evidence_quote[:150] + "..." if len(score.evidence_quote) > 150 else score.evidence_quote
+                    md += f"> {quote}\n"
+                if score.source_url and score.source_url != "N/A":
+                    md += f"- Source: [{score.source_url[:50]}...]({score.source_url})\n"
+                if score.signals_detected:
+                    md += f"- Signals: {', '.join(score.signals_detected[:3])}\n"
+                md += "\n"
+        
+        md += "---\n\n"
 
     return md
 

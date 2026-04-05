@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Database (will be created fresh)
+*.db
+
+# Docs
+docs/
+*.md
+!README.md
+
+# Tests
+tests/
+*_test.py
+test_*.py

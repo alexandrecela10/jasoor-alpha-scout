@@ -1,247 +1,324 @@
-# Jasoor "Alpha Scout" — AI Sourcing & Scoring Engine
+# Alpha Scout — AI-Powered Startup Sourcing for MENA
 
-> *"For the courageous investor"*
+> *"For the courageous investor"* — Jasoor Ventures
 
-An AI-powered tool that identifies, benchmarks, and scores early-stage startups in the **MENAT** region, using grounded real-time data to mirror the success of Jasoor's current portfolio.
+AI-powered tool that discovers, enriches, and scores early-stage startups in the **MENA** region using grounded real-time data.
 
-## Pipeline Overview & User Journey
+---
+
+## Flow Diagram
 
 ```
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│  1. INPUT    │───▶│  2. SEARCH   │───▶│  3. SCORE    │───▶│  4. REVIEW   │
-│   (app.py)   │    │ (search.py)  │    │ (scorer.py)  │    │(reviewer.py) │
-│              │    │              │    │              │    │              │
-│ • Seed co.   │    │ • Tavily API │    │ • 4 dims     │    │ • Validate   │
-│ • Criteria   │    │ • Gemini     │    │ • Evidence   │    │ • No halluc. │
-│ • Weights    │    │   extraction │    │ • 1.0-5.0    │    │ • Explain    │
-└──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘
-                                                                    │
-                    ┌───────────────────────────────────────────────┘
-                    ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                        5. VISUALIZE & EXPORT                              │
-├──────────────────────────────────────────────────────────────────────────┤
-│  visualizer.py          │  reporting.py                                  │
-│  • 2x2 Matrix (Plotly)  │  • Excel (Summary + Details)                   │
-│  • Dark theme           │  • PDF report                                  │
-│  • Hover tooltips       │  • Email (SMTP)                                │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           ALPHA SCOUT PIPELINE                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────┐     ┌──────────────────────────────────────┐     ┌──────────────┐
+  │   SEARCH     │────▶│         MULTI-SOURCE ENRICHMENT       │────▶│    SCORE     │
+  │  search.py   │     │         source_enrichment.py          │     │  scorer.py   │
+  │              │     │                                        │     │              │
+  │ • Tavily API │     │  ┌─────────────┐  ┌─────────────┐     │     │ • 4 dims     │
+  │ • Gemini     │     │  │  Website    │  │  LinkedIn   │     │     │ • Evidence   │
+  │   extract    │     │  │  Finder     │  │  Finder     │     │     │ • Grounding  │
+  └──────────────┘     │  │  Agent      │  │  Agent      │     │     └──────────────┘
+                       │  └──────┬──────┘  └──────┬──────┘     │            │
+                       │         │                │            │            │
+                       │         ▼                ▼            │            │
+                       │  ┌─────────────┐  ┌─────────────┐     │            │
+                       │  │  Stage      │  │  FILTERS    │     │            │
+                       │  │  Finder     │  │ • <100 emp  │     │            │
+                       │  │  Agent      │  │ • MENA HQ   │     │            │
+                       │  │             │  │ • ≤Series B │     │            │
+                       │  └─────────────┘  └─────────────┘     │            │
+                       └───────────────────────────────────────┘            │
+                                                                            │
+       ┌────────────────────────────────────────────────────────────────────┘
+       ▼
+  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+  │   DISPLAY    │────▶│   ANALYZE    │────▶│   EXPORT     │
+  │   app.py     │     │  vc_chat.py  │     │              │
+  │              │     │              │     │              │
+  │ • Table +    │     │ • AI Analyst │     │ • Excel      │
+  │   Evidence   │     │ • Grounded   │     │ • Target     │
+  │ • 2x2 Matrix │     │   insights   │     │   List       │
+  └──────────────┘     └──────────────┘     └──────────────┘
 ```
 
-## Jobs to Be Done (User Stories)
+---
 
-### Step 1: **Eligibility Criteria** (Find Similar Companies)
-> *"I want to find companies similar enough based on demographics & problem angle"*
+## User Stories
 
-**When I** select a seed company from Jasoor's portfolio  
-**And** define eligibility filters (problem statement, target clients, industry, tech, location, size)  
-**Then** the system searches for companies that match my demographic and problem criteria.
+### 1. **Find Similar Companies**
+> *"I want to find MENA startups similar to my portfolio companies"*
 
-**Model Used:** `gemini-2.5-flash` (fast, efficient for search)
+Select a seed company → Set criteria → Search returns matching startups with verified data.
+
+### 2. **Filter by Hard Criteria**
+> *"I only want early-stage startups (<100 employees, Series B or earlier) in MENA"*
+
+Hard filters automatically remove companies that don't meet size, location, or funding stage requirements.
+
+### 3. **Score & Compare**
+> *"I want to systematically evaluate companies on key dimensions"*
+
+Each company scored on: **Offer Power**, **Sales Ability**, **Tech Moat**, **Founder Strength**.
+
+### 4. **Get AI Insights**
+> *"I want an AI analyst to help me understand the data"*
+
+VC Analyst chat provides grounded analysis using only verified evidence.
+
+### 5. **Save & Continue Later**
+> *"I want to pick up where I left off"*
+
+Load previous searches, add companies to target list, export to Excel.
 
 ---
 
-### Step 2: **Import Your Brain** (Score & Triage)
-> *"I want to apply my investment expertise to systematically evaluate companies"*
+## Usage Guide
 
-**When I** review the eligible companies  
-**Then** I can customize scoring criteria based on my expertise  
-**And** each company is scored using **two-pass analysis**:
-
-#### Two-Pass Scoring Architecture:
-1. **Pass 1: Objective Signal Detection** — Keywords and patterns (fast, verifiable)
-2. **Pass 2: LLM Interpretation** — Contextual reasoning (powerful model)
-
-#### Scoring Dimensions (Modular Sub-components):
-
-| Dimension | Sub-components |
-|-----------|----------------|
-| **Offer Power** | Dream Outcome, Perceived Likelihood, Time Delay, Effort Required |
-| **Sales Ability** | Inbound Lead Gen, Outbound Lead Gen, Conversion Ability |
-| **Tech Moat** | Patents/IP, Data Moat, Network Effects, Switching Costs, Regulatory, Brand, Complexity, Cost |
-| **Founder Strength** | Prior Exits, Domain Expertise, Technical Depth, Network/Advisors |
-
-**Model Used:** `gemini-2.5-pro` (powerful reasoning for scoring)
-
----
-
-### Step 3: **Research & Navigate**
-> *"I need to dig deeper into promising companies"*
-
-**When I** view the scored companies  
-**Then** I can click through to company websites  
-**And** see all detected objective signals  
-**And** view evidence quotes with source URLs  
-**And** navigate to startup forums for more grounded information.
-
----
-
-### Step 4: **Validate Results**
-> *"I need confidence that the data is real and companies actually exist"*
-
-**When I** review the Appendix  
-**Then** the reviewer agent validates:
-- Seed company profile accuracy
-- Found companies actually exist (no hallucinations)
-- Companies match the similarity criteria  
-**And** shows all objective signals used (configurable)  
-**And** explains why each score was given.
-
----
-
-### Step 5: **Visualize & Compare**
-> *"I want to quickly compare companies to identify the most promising opportunities"*
-
-**When I** view the 2x2 matrix  
-**Then** I can toggle axes between any scoring dimensions or CAC/LTV  
-**And** hover to see company details, scores, and summaries  
-**And** the plot uses decimal scores (1.0-5.0) for better spread and differentiation.
-
----
-
-### Step 6: **Export & Share**
-> *"I need to share findings with my team and follow up with promising companies"*
-
-**When I** complete my analysis  
-**Then** I can export:
-- **Excel** with summary table and detailed score evidence  
-- **PDF** report with company profiles and founder contacts
-- **Email** directly to team members with PDF attached
-
-**Appendix included:** All objective signals configuration for transparency.
-
-## Tech Stack
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| **LLM (Search)** | Gemini 2.5 Flash | Fast extraction for eligibility search |
-| **LLM (Scoring)** | Gemini 2.5 Pro | Powerful reasoning for two-pass scoring |
-| **Search** | Tavily API | MENAT startup discovery with source URLs |
-| **UI** | Streamlit | Dark-themed web interface |
-| **Visualization** | Plotly | Interactive 2x2 matrix with hover tooltips |
-| **Observability** | Langfuse | Trace every LLM call, monitor costs |
-| **Data** | Pandas + openpyxl | Excel export functionality |
-| **Reporting** | fpdf2 | PDF generation for reports |
-
-## Key Features
-
-### 🎯 **Grounded Intelligence**
-- Every score includes evidence_quote + source_url
-- No hallucinations — returns "N/A" if no evidence
-- Reviewer agent validates all outputs
-
-### 🎨 **Jasoor Branding**
-- Dark navy theme with mint accents
-- "For the courageous investor" tagline
-- Professional VC analyst experience
-
-### 📊 **Interactive Analysis**
-- Decimal scoring (1.0-5.0) for better company differentiation
-- Configurable similarity criteria
-- Customizable scoring dimensions
-- 2x2 matrix with toggleable axes
-
-### 📤 **Multiple Export Formats**
-- **Excel**: Summary + detailed evidence sheets
-- **PDF**: Professional report with founder contacts
-- **Email**: SMTP integration with PDF attachment
-
-## Quick Start
-
+### Quick Start
 ```bash
-# 1. Clone and enter the project
+# 1. Setup
 cd alpha_scout
-
-# 2. Create a virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# 3. Install dependencies
+python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-# 4. Set up your API keys
+# 2. Configure API keys
 cp .env.example .env
-# Edit .env with your real keys
+# Edit .env with: GEMINI_API_KEY, TAVILY_API_KEY
 
-# 5. Run the app
+# 3. Run
 streamlit run app.py
 ```
 
-## Required API Keys
+### Basic Workflow
+1. **Sidebar** → Select seed company or enter custom criteria
+2. **Filters** → Set max employees, MENA only, Series B or earlier
+3. **Search** → Click "Search & Score"
+4. **Results** → View Comparison Table (with evidence), 2x2 Matrix, Detailed Report
+5. **Target List** → Add promising companies
+6. **VC Analyst** → Expand for AI-powered analysis
 
-| Key | Where to get it |
-|-----|----------------|
-| `GEMINI_API_KEY` | https://aistudio.google.com/apikey |
-| `TAVILY_API_KEY` | https://tavily.com |
-| `LANGFUSE_PUBLIC_KEY` | https://cloud.langfuse.com → Settings → API Keys |
-| `LANGFUSE_SECRET_KEY` | https://cloud.langfuse.com → Settings → API Keys |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` | For email export (Gmail requires App Password) |
+### Key Features
+| Feature | Description |
+|---------|-------------|
+| **Load Previous Search** | Resume analysis from sidebar |
+| **Website Finder Agent** | Searches & verifies official company website |
+| **LinkedIn Finder Agent** | Finds LinkedIn page, extracts employees/HQ |
+| **Stage Finder Agent** | Finds funding stage (Seed, Series A, B, etc.) |
+| **MENA Filter** | Only MENA-headquartered companies |
+| **Size Filter** | Max 100 employees (tunable) |
+| **Stage Filter** | Series B and earlier only |
+| **Evidence in Table** | Each score shows quote + source URL |
+| **VC Analyst Chat** | AI insights using only grounded data |
 
-### Email Setup (Optional)
-For Gmail, generate an App Password at https://myaccount.google.com/apppasswords  
-Regular passwords won't work with SMTP.
+---
 
-## Project Structure
+## Technical Guide
+
+### Step-by-Step Function Flow
 
 ```
-alpha_scout/
-├── app.py              # Streamlit UI (main entry point)
-├── config.py           # ⭐ MAIN CONFIG: Portfolio, signals, weights (edit this!)
-├── scoring_criteria.py # Helper functions that build from config.py
-├── models.py           # Data classes (SearchResult, ScoredCompany, etc.)
-├── search.py           # Tavily search + Gemini extraction
-├── scorer.py           # Two-pass scoring (signals + LLM)
-├── reviewer.py         # Validation agent (no hallucinations)
-├── visualizer.py       # Plotly 2x2 matrix
-├── reporting.py        # Excel, PDF, Email exports
-├── llm_client.py       # Gemini API wrapper with grounding
-├── tracing.py          # Langfuse observability
-├── .env.example        # API keys template
-├── requirements.txt    # Python dependencies
-├── README.md           # This file
-└── docs/
-    └── architecture.md  # Detailed pipeline diagram
+User clicks "Search & Score"
+        │
+        ▼
+┌─ app.py ─────────────────────────────────────────────────────────────┐
+│  search_similar_companies(seed, criteria, location, sources)         │
+└──────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─ search.py ──────────────────────────────────────────────────────────┐
+│  1. _build_search_query() → Create Tavily search query               │
+│  2. tavily.search() → Get raw results with source URLs               │
+│  3. _extract_companies_from_results() → Gemini extracts structured   │
+│  4. validate_all_fields() → Grounding checks (grounding.py)          │
+│  5. verify_website_exists() → HTTP check if website is real          │
+└──────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─ source_enrichment.py ───────────────────────────────────────────────┐
+│  enrich_search_results() → For each company:                         │
+│                                                                       │
+│  AGENT 1: Website Finder                                              │
+│     • Tavily search: "{company} official website"                     │
+│     • Filter out social media, aggregators                            │
+│     • Fetch page, verify company name appears                         │
+│     • Extract: description, sector, location, tech stack              │
+│                                                                       │
+│  AGENT 2: LinkedIn Finder                                             │
+│     • Tavily search: "site:linkedin.com/company {company}"            │
+│     • Verify company name in page title                               │
+│     • Extract: employee count, HQ, industry, founded year             │
+│                                                                       │
+│  AGENT 3: Stage Finder                                                │
+│     • Tavily search: "{company} funding round series seed"            │
+│     • Extract: Pre-seed, Seed, Series A/B/C, etc.                     │
+│     • Verify quote in source content                                  │
+│                                                                       │
+│  FILTERS:                                                             │
+│     • passes_size_filter() → Check <100 employees                     │
+│     • is_in_mena() → Check HQ in MENA region                          │
+│     • is_early_stage() → Check ≤Series B                              │
+│                                                                       │
+│  Return: (passed, filtered_out, enrichments)                          │
+└──────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─ scorer.py ──────────────────────────────────────────────────────────┐
+│  score_companies(search_results) → For each company:                 │
+│  1. Pass 1: detect_signals() → Keyword matching (fast, verifiable)   │
+│  2. Pass 2: call_gemini() → LLM scoring with evidence quotes         │
+│  3. validate_score_evidence() → Grounding check on quotes            │
+│  4. Return: ScoredCompany with 4 dimension scores                    │
+└──────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─ app.py (display) ───────────────────────────────────────────────────┐
+│  1. generate_markdown_table() → Comparison table                     │
+│  2. create_matrix_plot() → Plotly 2x2 visualization                  │
+│  3. Display grounded evidence per company                            │
+└──────────────────────────────────────────────────────────────────────┘
+        │
+        ▼
+┌─ vc_chat.py ─────────────────────────────────────────────────────────┐
+│  chat_with_vc_analyst(message, targets) →                            │
+│  1. build_target_context() → Format company data for LLM             │
+│  2. call_gemini() → Get AI response (fast or thinking model)         │
+│  3. Return grounded analysis with table format                       │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-## Customizing Objective Signals
+### Key Files
+| File | Purpose |
+|------|---------|
+| `app.py` | Streamlit UI, orchestrates pipeline |
+| `search.py` | Tavily search + Gemini extraction |
+| `source_enrichment.py` | **3 agents**: Website Finder, LinkedIn Finder, Stage Finder |
+| `scorer.py` | Two-pass scoring (signals + LLM) |
+| `reporting.py` | Comparison table with evidence, Excel export |
+| `grounding.py` | Evidence validation, no hallucinations |
+| `vc_chat.py` | AI analyst chat with grounded prompts |
+| `persistence.py` | SQLite storage for searches, targets |
+| `config.py` | Portfolio companies, scoring signals |
 
-VC Analysts can adjust scoring signals in **`config.py`**:
+---
 
-```python
-# Example: Add a new keyword to Tech Moat → Patents
-OBJECTIVE_SIGNALS["tech_moat"]["patents_ip"]["patents"]["keywords"].append("trademark")
+## Deployment (Google Cloud)
 
-# Example: Change weight of a signal
-OBJECTIVE_SIGNALS["sales_ability"]["conversion_ability"]["revenue_evidence"]["weight"] = 1.5
+### Option 1: Cloud Run (Recommended)
+```bash
+# Build container
+gcloud builds submit --tag gcr.io/PROJECT_ID/alpha-scout
 
-# Example: Add inverse signal (presence is negative)
-OBJECTIVE_SIGNALS["offer_power"]["effort_required"]["high_effort"]["inverse"] = True
+# Deploy
+gcloud run deploy alpha-scout \
+  --image gcr.io/PROJECT_ID/alpha-scout \
+  --platform managed \
+  --allow-unauthenticated \
+  --set-env-vars "GEMINI_API_KEY=xxx,TAVILY_API_KEY=xxx"
 ```
 
-### Signal Structure:
+### Option 2: Compute Engine
+```bash
+# SSH into VM
+gcloud compute ssh alpha-scout-vm
+
+# Clone and run
+git clone <repo>
+cd alpha_scout
+pip install -r requirements.txt
+streamlit run app.py --server.port 8080
 ```
-OBJECTIVE_SIGNALS = {
-    "dimension_key": {
-        "sub_component": {
-            "signal_name": {
-                "keywords": ["keyword1", "keyword2"],
-                "weight": 1.0,
-                "inverse": False,
-                "description": "What this signal indicates"
-            }
-        }
-    }
-}
+
+### Required Environment Variables
 ```
+GEMINI_API_KEY=your_gemini_key
+TAVILY_API_KEY=your_tavily_key
+LANGFUSE_PUBLIC_KEY=optional
+LANGFUSE_SECRET_KEY=optional
+```
+
+---
 
 ## Grounding Guarantee
 
-**Every piece of information MUST be grounded in source data:**
+Every piece of information is verified by **3 specialized agents**:
 
-- ✅ Score has `evidence_quote` from source
-- ✅ Score has `source_url` for verification  
-- ✅ If no evidence exists → return "N/A" (never guess)
-- ✅ Reviewer validates no hallucinations
-- ✅ Langfuse traces every LLM call for auditability
+### Website Finder Agent
+- ✅ Searches Tavily for official company website
+- ✅ Filters out social media and aggregator sites
+- ✅ Fetches actual page content via HTTP
+- ✅ Verifies company name appears in page
 
-This ensures **zero hallucinations** and **full auditability** for VC-grade diligence.
+### LinkedIn Finder Agent
+- ✅ Searches for company LinkedIn page
+- ✅ Extracts employee count, HQ, industry
+- ✅ Verifies company name in page title
+
+### Stage Finder Agent
+- ✅ Searches for funding announcements
+- ✅ Extracts funding stage (Seed, Series A/B/C)
+- ✅ Verifies quote exists in source content
+
+### Multi-Source Evidence
+- ✅ Each data point can have multiple sources
+- ✅ Confidence score increases with more verified sources
+- ✅ Comparison table shows evidence quotes + source URLs
+- ✅ VC Analyst uses only grounded data
+
+**Zero hallucinations. Full auditability.**
+
+---
+
+## Observability & Continuous Improvement
+
+Every LLM call is **traced and evaluated** via [Langfuse](https://langfuse.com), ensuring measurable improvement over time.
+
+### What's Traced
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         LANGFUSE OBSERVABILITY                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+  Every LLM Call                    Every Enrichment Batch
+  ─────────────                     ──────────────────────
+  • Prompt sent                     • valid_website (% accessible)
+  • Response received               • right_website (% name match)
+  • Token count                     • employee_count_rate (% found)
+  • Latency (ms)                    • stage_found_rate (% found)
+  • Model used                      • location_mena_rate (% in MENA)
+```
+
+### Evaluation Metrics (Logged to Langfuse)
+
+| Metric | Description | Target |
+|--------|-------------|--------|
+| `valid_website` | Website URL returns HTTP 200 | >90% |
+| `right_website` | Page content contains company name | >85% |
+| `employee_count_rate` | Employee count successfully extracted | >80% |
+| `stage_found_rate` | Funding stage found in news/Crunchbase | >60% |
+| `location_mena_rate` | Company HQ is in MENA region | 100% |
+| `llm_judge_score` | LLM-as-a-Judge quality review | >0.7 |
+
+### LLM-as-a-Judge
+
+After scoring, an LLM reviews each company's enrichment quality:
+- **Website Accuracy** — Is the URL plausible for this company?
+- **Data Completeness** — Are key fields (employees, location, stage) filled?
+- **Evidence Quality** — Are quotes and sources provided for claims?
+- **Score Justification** — Do the scores have supporting evidence?
+
+### Why This Matters
+
+```
+Week 1: valid_website = 75%  →  Identify failing patterns
+Week 2: valid_website = 82%  →  Fix domain filtering
+Week 3: valid_website = 91%  →  Continuous improvement ✓
+```
+
+All metrics are visible in the Langfuse dashboard, enabling:
+- 📈 **Trend analysis** — Track quality over time
+- 🔍 **Debugging** — Inspect failing LLM calls
+- 💰 **Cost tracking** — Monitor token usage
+- 🎯 **A/B testing** — Compare prompt variations
