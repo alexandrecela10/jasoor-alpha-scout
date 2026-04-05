@@ -110,6 +110,7 @@ streamlit run app.py
 ### Key Features
 | Feature | Description |
 |---------|-------------|
+| **🧠 Learning System** | Blacklists ineligible companies — search gets faster over time |
 | **Smart Query** | Bakes eligibility filters (MENA, early-stage, <100 emp) into search query |
 | **2x Overfetch** | Searches for 2x companies to ensure enough pass post-enrichment filters |
 | **Website Finder Agent** | Searches & verifies official company website |
@@ -122,12 +123,29 @@ streamlit run app.py
 | **Evidence in Table** | Each score shows quote + source URL |
 | **VC Analyst Chat** | Dual output: grounded analysis + VC interpretation |
 
+### 🧠 Learning System (Blacklist)
+
+The search engine **learns over time** by maintaining a blacklist of companies that failed eligibility filters:
+
+| Reason | Description |
+|--------|-------------|
+| `non_mena` | Company HQ is not in MENA region |
+| `too_large` | Company has >100 employees |
+| `late_stage` | Company is Series C or later |
+
+**How it works:**
+1. When a company fails a filter, it's added to the blacklist with the reason
+2. Future searches automatically skip blacklisted companies
+3. This saves API calls and makes searches faster over time
+4. Users can view, edit, or clear the blacklist in the sidebar
+
 ### Performance
 | Metric | Value |
 |--------|-------|
 | **Enrichment per company** | ~3s (parallel) vs ~9s (sequential) |
 | **10 companies** | ~30s total |
 | **Parallelization** | ThreadPoolExecutor with 3 workers |
+| **Learning speedup** | Skips blacklisted companies (0s per skip) |
 
 ---
 

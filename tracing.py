@@ -97,17 +97,35 @@ def create_trace(
         return None
 
     try:
-        # Use trace() instead of start_observation() to get a proper trace
-        # that can receive scores in the Langfuse evaluations section
-        trace = lf.trace(
+        # Generate a unique trace ID for scoring
+        import uuid
+        trace_id = lf.create_trace_id()
+        
+        # Use start_span to create a trace-like grouping
+        span = lf.start_span(
             name=name,
             input=input_data,
             metadata=metadata,
-            user_id=user_id,
-            session_id=session_id,
         )
-        logger.info(f"Created Langfuse trace: {trace.id} (user={user_id}, session={session_id})")
-        return trace
+        
+        # Create a score directly with user/session info
+        # Langfuse scores are attached via trace_id
+        lf.create_score(
+            trace_id=trace_id,
+            name="trace_created",
+            value=1.0,
+            comment=f"user={user_id}, session={session_id}",
+        )
+        
+        logger.info(f"Created Langfuse span: {trace_id} (user={user_id}, session={session_id})")
+        
+        # Return a simple object with the trace_id for scoring
+        class TraceWrapper:
+            def __init__(self, trace_id, span):
+                self.id = trace_id
+                self._span = span
+        
+        return TraceWrapper(trace_id, span)
     except Exception as e:
         # Tracing should never crash the app — log and continue
         logger.error(f"Failed to create trace: {e}")
@@ -180,7 +198,8 @@ def score_trace(trace_id: str, name: str, value: float, comment: str = None):
     
     try:
         logger.info(f"Scoring trace {trace_id}: {name}={value}")
-        lf.score(
+        # Use create_score (not score) - correct method name for this Langfuse version
+        lf.create_score(
             trace_id=trace_id,
             name=name,
             value=value,

@@ -26,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tavily import TavilyClient
 from llm_client import call_gemini, parse_json_response
 from models import SearchResult
+from persistence import add_to_blacklist, get_blacklist_set, _normalize_company_name
 
 logger = logging.getLogger(__name__)
 
@@ -999,6 +1000,10 @@ def enrich_search_results(
     """
     Enrich all search results with website and LinkedIn data.
     
+    The system LEARNS over time by maintaining a blacklist of companies
+    that failed eligibility filters. Blacklisted companies are skipped
+    in future searches, making the search faster and more efficient.
+    
     Args:
         search_results: Companies from initial search
         max_employees: Maximum employee count filter
@@ -1008,13 +1013,21 @@ def enrich_search_results(
     Returns:
         (passed_filter, filtered_out, enrichments_dict)
     """
-    # MENA_COUNTRIES is defined at module level
+    # Load blacklist once for fast lookup
+    blacklist = get_blacklist_set()
+    blacklist_skipped = 0
     
     passed = []
     filtered_out = []
     enrichments = {}
     
     for sr in search_results:
+        # Skip blacklisted companies (learning system)
+        normalized_name = _normalize_company_name(sr.name)
+        if normalized_name in blacklist:
+            logger.info(f"⏭️ Skipping blacklisted company: {sr.name}")
+            blacklist_skipped += 1
+            continue
         logger.info(f"Enriching: {sr.name}")
         
         # Get initial hints from search result
@@ -1101,6 +1114,32 @@ def enrich_search_results(
         else:
             filtered_out.append(sr)
             logger.info(f"✗ {sr.name} filtered: {filter_reason}")
+            
+            # Add to blacklist for future searches (learning system)
+            # Determine reason code and details
+            if "Too large" in filter_reason:
+                add_to_blacklist(
+                    sr.name, 
+                    reason="too_large",
+                    details=filter_reason,
+                    source_url=enrichment.linkedin_url.value if enrichment.linkedin_url else None
+                )
+            elif "Not in MENA" in filter_reason:
+                add_to_blacklist(
+                    sr.name,
+                    reason="non_mena", 
+                    details=filter_reason,
+                    source_url=enrichment.linkedin_url.value if enrichment.linkedin_url else None
+                )
+            elif "Too late stage" in filter_reason:
+                add_to_blacklist(
+                    sr.name,
+                    reason="late_stage",
+                    details=filter_reason,
+                    source_url=enrichment.linkedin_url.value if enrichment.linkedin_url else None
+                )
     
+    if blacklist_skipped > 0:
+        logger.info(f"🧠 Learning system: Skipped {blacklist_skipped} blacklisted companies")
     logger.info(f"Enrichment complete: {len(passed)} passed, {len(filtered_out)} filtered")
     return passed, filtered_out, enrichments

@@ -182,6 +182,23 @@ def init_db():
         )
     """)
     
+    # Table for Company Blacklist — companies that failed eligibility filters
+    # The search engine learns over time by skipping these companies
+    # Reasons: non_mena (not in MENA), too_large (>100 employees), late_stage (>Series B)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS company_blacklist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            company_name TEXT NOT NULL,
+            company_name_normalized TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            details TEXT,
+            source_url TEXT,
+            is_active INTEGER DEFAULT 1,
+            UNIQUE(company_name_normalized, reason)
+        )
+    """)
+    
     conn.commit()
     conn.close()
     logger.info(f"Database initialized at {DB_PATH}")
@@ -953,3 +970,225 @@ def get_feedback_for_learning() -> List[Dict]:
         }
         for r in rows
     ]
+
+
+# =============================================================================
+# COMPANY BLACKLIST — Learning system that skips ineligible companies
+# =============================================================================
+
+def _normalize_company_name(name: str) -> str:
+    """
+    Normalize company name for matching.
+    Removes common suffixes, lowercases, strips whitespace.
+    """
+    if not name:
+        return ""
+    normalized = name.lower().strip()
+    # Remove common suffixes
+    for suffix in [" inc", " inc.", " ltd", " ltd.", " llc", " co", " co.", " corp", " corporation"]:
+        if normalized.endswith(suffix):
+            normalized = normalized[:-len(suffix)].strip()
+    return normalized
+
+
+def add_to_blacklist(
+    company_name: str,
+    reason: str,
+    details: str = None,
+    source_url: str = None,
+) -> bool:
+    """
+    Add a company to the blacklist.
+    
+    Args:
+        company_name: Name of the company
+        reason: Why blacklisted (non_mena, too_large, late_stage)
+        details: Additional details (e.g., "500 employees", "Series D")
+        source_url: Where we found this info
+    
+    Returns:
+        True if added, False if already exists
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    normalized = _normalize_company_name(company_name)
+    
+    try:
+        cursor.execute("""
+            INSERT INTO company_blacklist 
+            (company_name, company_name_normalized, reason, details, source_url)
+            VALUES (?, ?, ?, ?, ?)
+        """, (company_name, normalized, reason, details, source_url))
+        conn.commit()
+        logger.info(f"Blacklisted: {company_name} ({reason})")
+        return True
+    except sqlite3.IntegrityError:
+        # Already exists with same name+reason
+        return False
+    finally:
+        conn.close()
+
+
+def is_blacklisted(company_name: str) -> Optional[Dict]:
+    """
+    Check if a company is blacklisted.
+    
+    Returns:
+        Dict with blacklist info if found, None otherwise
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    normalized = _normalize_company_name(company_name)
+    
+    cursor.execute("""
+        SELECT * FROM company_blacklist 
+        WHERE company_name_normalized = ? AND is_active = 1
+        ORDER BY added_at DESC
+        LIMIT 1
+    """, (normalized,))
+    
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row:
+        return {
+            "id": row["id"],
+            "company_name": row["company_name"],
+            "reason": row["reason"],
+            "details": row["details"],
+            "added_at": row["added_at"],
+        }
+    return None
+
+
+def get_blacklist() -> List[Dict]:
+    """
+    Get all blacklisted companies.
+    
+    Returns:
+        List of blacklist entries
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT * FROM company_blacklist 
+        WHERE is_active = 1
+        ORDER BY added_at DESC
+    """)
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return [
+        {
+            "id": r["id"],
+            "company_name": r["company_name"],
+            "reason": r["reason"],
+            "details": r["details"],
+            "source_url": r["source_url"],
+            "added_at": r["added_at"],
+        }
+        for r in rows
+    ]
+
+
+def get_blacklist_set() -> set:
+    """
+    Get normalized names of all blacklisted companies as a set.
+    Optimized for fast lookup during search.
+    
+    Returns:
+        Set of normalized company names
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT DISTINCT company_name_normalized 
+        FROM company_blacklist 
+        WHERE is_active = 1
+    """)
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    return {r["company_name_normalized"] for r in rows}
+
+
+def remove_from_blacklist(blacklist_id: int) -> bool:
+    """
+    Remove a company from the blacklist (soft delete).
+    
+    Args:
+        blacklist_id: ID of the blacklist entry
+    
+    Returns:
+        True if removed, False if not found
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        UPDATE company_blacklist 
+        SET is_active = 0 
+        WHERE id = ?
+    """, (blacklist_id,))
+    
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    
+    return affected > 0
+
+
+def clear_blacklist() -> int:
+    """
+    Clear all blacklisted companies (soft delete).
+    
+    Returns:
+        Number of entries cleared
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        UPDATE company_blacklist 
+        SET is_active = 0 
+        WHERE is_active = 1
+    """)
+    
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    
+    logger.info(f"Cleared {affected} blacklist entries")
+    return affected
+
+
+def get_blacklist_stats() -> Dict:
+    """
+    Get statistics about the blacklist.
+    
+    Returns:
+        Dict with counts by reason
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT reason, COUNT(*) as count 
+        FROM company_blacklist 
+        WHERE is_active = 1
+        GROUP BY reason
+    """)
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    stats = {r["reason"]: r["count"] for r in rows}
+    stats["total"] = sum(stats.values())
+    
+    return stats

@@ -52,7 +52,7 @@ from persistence import (
     init_db, save_search, load_search, load_search_by_share_id, list_searches, delete_search,
     add_to_target_list, get_target_list, remove_from_target_list, is_in_target_list,
     schedule_search, get_scheduled_searches, delete_scheduled_search, toggle_scheduled_search,
-    save_feedback,
+    save_feedback, get_blacklist, get_blacklist_stats, remove_from_blacklist, clear_blacklist,
 )
 from vc_chat import chat_with_vc_analyst, get_suggested_prompts
 from source_enrichment import enrich_search_results, CompanyEnrichment, DEFAULT_MAX_EMPLOYEES
@@ -836,6 +836,53 @@ with st.sidebar:
             st.markdown(f"**Total:** {len(scheduled)} scheduled")
         else:
             st.info("No scheduled searches. Run a search and schedule it!")
+
+    st.divider()
+    
+    # --- Company Blacklist (Learning System) ---
+    with st.expander("🧠 Learning System (Blacklist)", expanded=False):
+        st.caption("*Companies that failed eligibility filters are skipped in future searches*")
+        
+        # Show stats
+        stats = get_blacklist_stats()
+        if stats["total"] > 0:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total", stats["total"])
+            with col2:
+                st.metric("Non-MENA", stats.get("non_mena", 0))
+            with col3:
+                st.metric("Too Large", stats.get("too_large", 0))
+            with col4:
+                st.metric("Late Stage", stats.get("late_stage", 0))
+            
+            st.markdown("---")
+            st.markdown("**Blacklisted Companies:**")
+            
+            blacklist = get_blacklist()
+            for entry in blacklist[:20]:  # Show first 20
+                col1, col2, col3 = st.columns([3, 2, 1])
+                with col1:
+                    reason_emoji = {"non_mena": "🌍", "too_large": "👥", "late_stage": "📈"}.get(entry["reason"], "❌")
+                    st.markdown(f"{reason_emoji} **{entry['company_name']}**")
+                with col2:
+                    st.caption(entry["details"] or entry["reason"])
+                with col3:
+                    if st.button("🔄", key=f"unblock_{entry['id']}", help="Remove from blacklist"):
+                        remove_from_blacklist(entry["id"])
+                        st.toast(f"Removed {entry['company_name']} from blacklist")
+                        st.rerun()
+            
+            if len(blacklist) > 20:
+                st.caption(f"*...and {len(blacklist) - 20} more*")
+            
+            st.markdown("---")
+            if st.button("🗑️ Clear All Blacklist", type="secondary"):
+                cleared = clear_blacklist()
+                st.toast(f"Cleared {cleared} entries from blacklist")
+                st.rerun()
+        else:
+            st.info("No companies blacklisted yet. The system will learn as you run searches.")
 
     st.divider()
     
