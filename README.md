@@ -6,6 +6,9 @@ AI-powered tool that discovers, enriches, and scores early-stage startups in the
 
 ![Alpha Scout Comparison View](assets/screenshot-comparison.png)
 
+![Langfuse Traces](assets/langfuse-traces.png)
+*Every agent call traced — score_company, linkedin_finder, website_finder, stage_finder*
+
 ### 🎬 Demo Video
 
 *Coming soon — video demo will be uploaded to YouTube*
@@ -355,6 +358,12 @@ Every piece of information is verified by **3 specialized agents**:
 ## Observability & Continuous Improvement
 
 Every LLM call is **traced and evaluated** via [Langfuse](https://langfuse.com), ensuring measurable improvement over time.
+
+![Langfuse Trace Detail](assets/langfuse-trace-detail.png)
+*Input/output tracing for every agent call — full prompt and structured JSON response*
+
+![Langfuse Evaluation Analytics](assets/langfuse-evaluation.png)
+*Evaluation metrics dashboard — track employee_count_rate, location_mena_rate over time*
 
 ### What's Traced
 ```
