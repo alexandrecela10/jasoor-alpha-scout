@@ -124,6 +124,10 @@ def create_trace(
             def __init__(self, trace_id, span):
                 self.id = trace_id
                 self._span = span
+            
+            def update(self, **kwargs):
+                """No-op update method for compatibility."""
+                pass
         
         return TraceWrapper(trace_id, span)
     except Exception as e:

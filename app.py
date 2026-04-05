@@ -38,7 +38,7 @@ from config import PORTFOLIO_COMPANIES, SCORING_DIMENSIONS, DEFAULT_SOURCES, BEN
 from ingest import get_simulated_inbound, extract_company_from_website, extract_company_from_text
 from models import ScoredCompany
 from search import search_similar_companies as search_tavily  # Tavily fallback
-from search_gemini import search_with_gemini, verify_urls_exist  # Primary: Gemini
+from search_gemini import search_with_gemini, verify_urls_exist, verify_and_enrich  # Primary: Gemini
 from scorer import score_companies
 from visualizer import create_matrix_plot, get_axis_options, AXIS_LABELS
 from reporting import (
@@ -1023,16 +1023,29 @@ if search_button:
                         max_results=max_results,
                     )
                 
-                # Light verification of URLs (quick HEAD requests)
-                if results:
-                    st.write("✅ Verifying company websites...")
-                    results = verify_urls_exist(results)
-                
-                # Source enrichment is now OPTIONAL (Gemini already provides basic data)
-                # Only run if user explicitly wants deep enrichment
+                # Grounded verification + enrichment (before scoring)
+                # Gemini is for QUICK CANDIDATE GENERATION only (training cutoff)
+                # Tavily provides grounded, real-time data from selected sources
                 filtered_out_companies = []
+                if results:
+                    st.write("🔗 Verifying website & LinkedIn URLs...")
+                    st.write("📊 Verifying funding stages from recent news (Tavily)...")
+                    st.write("📄 Fetching website content for scoring...")
+                    st.write("🔍 Searching independent sources (Crunchbase, TechCrunch, MENA news)...")
+                    results, filtered_out_companies = verify_and_enrich(
+                        results,
+                        verify_urls=True,  # Check website + LinkedIn exist
+                        verify_stage=True,  # Stage Agent verifies from Tavily news
+                        fetch_website_content=True,  # Get website content for scorer
+                        fetch_independent_sources=True,  # Tavily search on selected sources
+                        early_stage_only=early_stage_only,
+                    )
+                    if filtered_out_companies:
+                        st.write(f"⚠️ Filtered {len(filtered_out_companies)} late-stage companies")
+                
+                # Deep enrichment is now OPTIONAL (for due diligence on specific companies)
                 enrichments = {}
-                if enrich_with_linkedin and results and False:  # Disabled by default - Gemini already enriches
+                if enrich_with_linkedin and results and False:  # Disabled - use verify_and_enrich instead
                     st.write("🔗 Enriching with website, LinkedIn, and funding data...")
                     
                     # Create trace for Langfuse evaluation with user/session tracking

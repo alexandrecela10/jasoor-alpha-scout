@@ -223,6 +223,27 @@ def fetch_page_content(url: str) -> Tuple[bool, str, str]:
         return False, "", ""
 
 
+def fetch_website_content(url: str) -> str:
+    """
+    Fetch website content for scoring.
+    
+    Returns plain text content from the website, useful for:
+    - Case studies
+    - Product descriptions
+    - Company information
+    
+    Args:
+        url: Website URL to fetch
+    
+    Returns:
+        Plain text content (max 10000 chars)
+    """
+    success, content, title = fetch_page_content(url)
+    if success:
+        return content[:10000]
+    return ""
+
+
 def verify_content_match(content: str, claim: str, threshold: float = 0.5) -> Tuple[bool, str]:
     """
     Verify that a claim appears in the content.

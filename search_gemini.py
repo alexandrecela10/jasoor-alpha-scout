@@ -14,7 +14,7 @@ The old Tavily search is kept as a fallback option.
 import os
 import logging
 import json
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Tuple
 
 from google import genai
 from google.genai import types
@@ -243,6 +243,183 @@ def _parse_companies_json(text: str) -> List[Dict]:
     
     logger.warning("Could not parse JSON from Gemini response")
     return []
+
+
+def verify_and_enrich(
+    results: List[SearchResult],
+    verify_stage: bool = True,
+    verify_urls: bool = True,
+    fetch_website_content: bool = True,
+    fetch_independent_sources: bool = True,
+    early_stage_only: bool = True,
+) -> Tuple[List[SearchResult], List[SearchResult]]:
+    """
+    Verify and enrich Gemini search results with grounded data.
+    
+    IMPORTANT: Gemini AI Search is for QUICK CANDIDATE GENERATION only.
+    Gemini's training data has a cutoff date, so we use Tavily for:
+    - Stage verification (recent funding news)
+    - Independent sources (Crunchbase, TechCrunch, etc.)
+    
+    This runs AFTER Gemini search but BEFORE scoring to ensure:
+    1. Website and LinkedIn URLs actually exist
+    2. Funding stage is accurate (from recent news via Tavily)
+    3. Scorer has website content (case studies, product info)
+    4. Scorer has independent sources (news, Crunchbase) for grounding
+    
+    Args:
+        results: Companies from Gemini search (candidates)
+        verify_stage: Run Stage Agent to verify funding stage from news
+        verify_urls: Verify website and LinkedIn URLs exist
+        fetch_website_content: Fetch website content for scorer
+        fetch_independent_sources: Search Tavily for independent sources
+        early_stage_only: Filter out companies beyond Series B
+    
+    Returns:
+        (passed, filtered_out) - companies that passed verification
+    """
+    import os
+    import requests
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from source_enrichment import find_funding_stage, is_early_stage, fetch_website_content as fetch_content
+    from persistence import add_to_blacklist
+    from tavily import TavilyClient
+    
+    # Independent sources to search for grounding
+    GROUNDING_SOURCES = [
+        "crunchbase.com",
+        "techcrunch.com",
+        "wamda.com",  # MENA tech news
+        "menabytes.com",  # MENA startups
+        "magnitt.com",  # MENA startup data
+        "zawya.com",  # MENA business news
+    ]
+    
+    def check_url(url: str) -> bool:
+        """Quick HEAD request to check if URL exists."""
+        if not url or not url.startswith("http"):
+            return False
+        try:
+            response = requests.head(url, timeout=3, allow_redirects=True)
+            return response.status_code < 400
+        except:
+            return False
+    
+    def search_independent_sources(company_name: str, location: str) -> List[Dict]:
+        """Search Tavily for independent sources about the company."""
+        try:
+            api_key = os.environ.get("TAVILY_API_KEY")
+            if not api_key:
+                return []
+            client = TavilyClient(api_key=api_key)
+            
+            query = f'"{company_name}" startup {location}'
+            results = client.search(
+                query=query,
+                search_depth="basic",  # Fast search
+                max_results=3,
+                include_domains=GROUNDING_SOURCES,
+            )
+            
+            sources = []
+            for r in results.get("results", []):
+                sources.append({
+                    "title": r.get("title", ""),
+                    "url": r.get("url", ""),
+                    "snippet": r.get("content", "")[:500],
+                    "source": r.get("url", "").split("/")[2] if r.get("url") else "",
+                })
+            return sources
+        except Exception as e:
+            logger.warning(f"Independent source search failed for {company_name}: {e}")
+            return []
+    
+    passed = []
+    filtered_out = []
+    
+    def process_company(sr: SearchResult) -> Tuple[SearchResult, bool, str]:
+        """Process one company: verify URLs, stage, fetch content + sources."""
+        filter_reason = ""
+        
+        if not sr.grounded_evidence:
+            sr.grounded_evidence = {}
+        
+        # 1. Verify website URL exists
+        if verify_urls and sr.website:
+            if not check_url(sr.website):
+                logger.warning(f"Website not accessible: {sr.website}")
+                sr.grounded_evidence["website_verified"] = False
+            else:
+                sr.grounded_evidence["website_verified"] = True
+        
+        # 2. Verify LinkedIn URL exists
+        if verify_urls:
+            linkedin = sr.grounded_evidence.get("linkedin", "")
+            if linkedin:
+                if not check_url(linkedin):
+                    logger.warning(f"LinkedIn not accessible: {linkedin}")
+                    sr.grounded_evidence["linkedin_verified"] = False
+                else:
+                    sr.grounded_evidence["linkedin_verified"] = True
+        
+        # 3. Verify funding stage from recent news (Tavily)
+        if verify_stage:
+            stage_field = find_funding_stage(sr.name, {"location": sr.location})
+            if stage_field:
+                verified_stage = stage_field.value
+                sr.funding_stage = verified_stage
+                
+                sr.grounded_evidence["stage_verification"] = {
+                    "stage": verified_stage,
+                    "source": stage_field.sources[0].to_dict() if stage_field.sources else None,
+                    "verified_from": "tavily_news_search",
+                }
+                
+                if early_stage_only and not is_early_stage(verified_stage):
+                    filter_reason = f"Too late stage ({verified_stage} > Series B)"
+                    return sr, False, filter_reason
+        
+        # 4. Fetch website content for scorer
+        if fetch_website_content and sr.website:
+            try:
+                content = fetch_content(sr.website)
+                if content:
+                    sr.grounded_evidence["website_content"] = content[:5000]
+            except Exception as e:
+                logger.warning(f"Could not fetch website content for {sr.name}: {e}")
+        
+        # 5. Search independent sources for grounding (Tavily)
+        if fetch_independent_sources:
+            sources = search_independent_sources(sr.name, sr.location)
+            if sources:
+                sr.grounded_evidence["independent_sources"] = sources
+                logger.info(f"Found {len(sources)} independent sources for {sr.name}")
+        
+        return sr, True, ""
+    
+    # Process all companies in parallel
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(process_company, sr): sr for sr in results}
+        
+        for future in as_completed(futures):
+            try:
+                sr, passed_filter, filter_reason = future.result()
+                if passed_filter:
+                    passed.append(sr)
+                    logger.info(f"✓ {sr.name} verified (stage: {sr.funding_stage})")
+                else:
+                    filtered_out.append(sr)
+                    logger.info(f"✗ {sr.name} filtered: {filter_reason}")
+                    # Add to blacklist
+                    if "late stage" in filter_reason.lower():
+                        add_to_blacklist(sr.name, "late_stage", filter_reason)
+            except Exception as e:
+                logger.error(f"Verification failed: {e}")
+                # Keep the company if verification fails
+                passed.append(futures[future])
+    
+    logger.info(f"Verification complete: {len(passed)} passed, {len(filtered_out)} filtered")
+    return passed, filtered_out
 
 
 def verify_urls_exist(results: List[SearchResult]) -> List[SearchResult]:
