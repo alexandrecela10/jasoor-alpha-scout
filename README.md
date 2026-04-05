@@ -101,6 +101,18 @@ AI-powered tool that discovers, enriches, and scores early-stage startups in the
 
 See [`docs/`](docs/) for detailed workflow guides.
 
+### 🎯 Key Filters for VC Analysts
+
+| Filter | Why It Matters |
+|--------|----------------|
+| **📍 MENA Only** | Focus on your target geography — UAE, Saudi, Egypt, Jordan, etc. |
+| **🚀 Series A or Earlier** | Find investable companies at your target stage |
+| **👥 Max Employees** | Filter out scaled companies (default: ≤100) |
+| **🏭 Industry Exclusion** | Remove off-thesis sectors (gambling, crypto, etc.) |
+| **📊 Similarity Criteria** | Match on problem, clients, tech, or industry |
+
+> These filters are applied **after** AI enrichment verifies data from LinkedIn, websites, and funding news — not just what the pitch deck claims.
+
 ---
 
 ## Usage Guide
