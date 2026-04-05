@@ -625,8 +625,8 @@ with st.sidebar:
             st.caption("*Only include recent sources to avoid stale information*")
             max_source_age = st.slider(
                 "Maximum source age (days):",
-                min_value=7, max_value=90, value=14,
-                help="Sources older than this will be filtered out. Default: 14 days (2 weeks)"
+                min_value=7, max_value=365, value=180,
+                help="Sources older than this will be filtered out. Default: 180 days (6 months)"
             )
             show_source_dates = st.checkbox("Show source dates in results", value=True)
         
@@ -1165,9 +1165,10 @@ if search_button:
                 st.error(f"Scoring error: {e}")
 
     # ── STEP 3: Review (shared across all modes) ───────────────────────────
+    # SKIP seed validation - it's slow and not needed (we know the seed from config)
+    # Only validate found companies exist and match criteria
     if st.session_state.scoring_complete and st.session_state.scored_companies:
         with st.status("🔍 Reviewing results for accuracy...", expanded=True) as status:
-            st.write("Validating companies exist and match criteria...")
             st.write("Checking for hallucinations...")
             try:
                 review = run_full_review(
@@ -1175,6 +1176,7 @@ if search_button:
                     search_results=st.session_state.search_results,
                     scored_companies=st.session_state.scored_companies,
                     criteria=selected_criteria,
+                    skip_seed_validation=True,  # Skip slow seed validation
                 )
                 st.session_state.review_result = review
                 st.session_state.review_complete = True

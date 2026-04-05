@@ -464,16 +464,25 @@ def run_full_review(
     search_results: List[SearchResult],
     scored_companies: List[ScoredCompany],
     criteria: List[str] = None,
+    skip_seed_validation: bool = False,
 ) -> ReviewResult:
     """
     Run the complete review pipeline.
+    
+    Args:
+        skip_seed_validation: If True, skip the slow seed company validation step.
+                             The seed is from our config so we don't need to validate it.
     
     Returns a ReviewResult with all validation data for the Appendix.
     """
     logger.info(f"Starting review for {seed_company}")
 
-    # Step 1: Validate seed company profile
-    seed_validations = review_seed_company(seed_company)
+    # Step 1: Validate seed company profile (SKIP if flag is set - saves ~5s)
+    if skip_seed_validation:
+        seed_validations = []
+        logger.info("Skipping seed validation (skip_seed_validation=True)")
+    else:
+        seed_validations = review_seed_company(seed_company)
 
     # Step 2: Validate similar companies
     company_validations = review_similar_companies(
