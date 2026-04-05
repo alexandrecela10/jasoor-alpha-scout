@@ -23,6 +23,17 @@ from dotenv import load_dotenv
 # This must happen before importing other modules that use env vars
 load_dotenv()
 
+# For Streamlit Cloud: load secrets into environment variables
+# Streamlit Cloud uses st.secrets, not .env files
+try:
+    import streamlit as st
+    if hasattr(st, 'secrets'):
+        for key in ['GEMINI_API_KEY', 'TAVILY_API_KEY', 'LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_HOST']:
+            if key in st.secrets:
+                os.environ[key] = st.secrets[key]
+except Exception:
+    pass  # Not running in Streamlit yet
+
 from config import PORTFOLIO_COMPANIES, SCORING_DIMENSIONS, DEFAULT_SOURCES, BENCHMARK_MENA_STARTUPS, SCOUT_MODES
 from ingest import get_simulated_inbound, extract_company_from_website, extract_company_from_text
 from models import ScoredCompany
