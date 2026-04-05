@@ -22,6 +22,7 @@ from google.genai import types
 from models import SearchResult, CompanyProfile
 from config import PORTFOLIO_COMPANIES
 from persistence import get_blacklist_set, _normalize_company_name
+from tracing import create_generation, get_langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -127,13 +128,30 @@ Return as JSON array:
 ]
 """
 
-    logger.info(f"Searching with Gemini + Google Search for companies similar to {seed_name}")
+    logger.info(f"Searching with Gemini for companies similar to {seed_name}")
+    
+    # Create Langfuse generation for tracing
+    generation = create_generation(
+        name="gemini_candidate_search",
+        model="gemini-2.5-flash",
+        input_data=prompt,
+        metadata={
+            "seed": seed_name,
+            "max_results": max_results,
+            "location": location,
+            "early_stage_only": early_stage_only,
+        }
+    )
     
     try:
         client = _get_client()
         
         # Call Gemini (without Google Search grounding - faster and more reliable)
-        # Gemini has extensive knowledge of MENA startups from training data
+        # WHY NO GOOGLE SEARCH GROUNDING?
+        # - Google Search grounding causes TOO_MANY_TOOL_CALLS errors
+        # - Takes 127s+ vs 15s without grounding
+        # - Returns empty responses due to tool call timeouts
+        # - We use Tavily for grounded verification instead (more control)
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -153,7 +171,13 @@ Return as JSON array:
         
         if not text:
             logger.warning("Empty response from Gemini")
+            if generation:
+                generation.update(output="Empty response", status="error")
             return []
+        
+        # Update Langfuse generation with response
+        if generation:
+            generation.update(output=text[:2000], status="success")
             
         logger.info(f"Gemini response length: {len(text)} chars")
         

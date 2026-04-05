@@ -10,43 +10,44 @@ AI-powered tool that discovers, enriches, and scores early-stage startups in the
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                      ALPHA SCOUT PIPELINE (v2 - Grounded)                    │
+│                      ALPHA SCOUT PIPELINE (v3 - Tavily)                      │
 └─────────────────────────────────────────────────────────────────────────────┘
 
   ┌──────────────────────────────────────────────────────────────────────────┐
-  │              ⚡ GEMINI AI SEARCH — Quick Candidate Generation             │
-  │                      search_gemini.py (~15s)                              │
+  │              🔍 TAVILY SMART SEARCH — Precise Company Discovery           │
+  │                      search.py                                            │
   │                                                                           │
-  │  ⚠️ NOTE: Gemini has a training data cutoff. This step is for QUICK      │
-  │  candidate generation only. We improve this over time with blacklist.    │
+  │  Query has stage + MENA filters BAKED IN:                                │
+  │  "early-stage startup seed series-A similar to Byanat fintech            │
+  │   MENA UAE Saudi Arabia Egypt Jordan"                                    │
   │                                                                           │
-  │  • Single Gemini call with criteria baked in                             │
-  │  • Returns: Name, Website, LinkedIn, Employees, Stage, Location          │
-  │  • Pre-filtered (MENA, <100 emp, ≤Series B)                              │
-  │  • Tavily as fallback if Gemini returns nothing                          │
+  │  • Searches ONLY user-selected source domains                            │
+  │  • Crunchbase, Magnitt, Wamda, TechCrunch, etc.                          │
+  │  • Gemini extracts structured company data from results                  │
+  │  • Blacklist skips previously filtered companies                         │
   └──────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
   ┌──────────────────────────────────────────────────────────────────────────┐
-  │              � TAVILY GROUNDED VERIFICATION + ENRICHMENT                 │
-  │                    verify_and_enrich() (~5s/company)                      │
+  │              🔗 MULTI-SOURCE ENRICHMENT                                   │
+  │                    source_enrichment.py                                   │
   │                                                                           │
-  │  1. URL Verification                                                     │
-  │     • HEAD request to verify website exists                              │
-  │     • HEAD request to verify LinkedIn exists                             │
+  │  1. Website Finder Agent                                                 │
+  │     • Search for official company website                                │
+  │     • Verify URL exists (HEAD request)                                   │
+  │     • Fetch content for scorer                                           │
   │                                                                           │
-  │  2. Stage Verification (Tavily → News Sources)                           │
+  │  2. LinkedIn Finder Agent                                                │
+  │     • Search for company LinkedIn page                                   │
+  │     • Extract employee count, HQ location                                │
+  │     • Verify URL exists                                                  │
+  │                                                                           │
+  │  3. Stage Finder Agent (Tavily → News)                                   │
   │     • Search Crunchbase, TechCrunch for funding news                     │
-  │     • Verify funding stage is accurate (not from Gemini's cutoff)        │
-  │     • Filter out companies that are actually late-stage                  │
+  │     • Verify funding stage from recent articles                          │
+  │     • Filter out late-stage companies (> Series B)                       │
   │                                                                           │
-  │  3. Website Content Fetch                                                │
-  │     • Fetch website content for scorer                                   │
-  │     • Case studies, product descriptions, company info                   │
-  │                                                                           │
-  │  4. Independent Sources (Tavily → Selected Domains)                      │
-  │     • Crunchbase, TechCrunch, Wamda, MENAbytes, Magnitt, Zawya          │
-  │     • Provides grounded evidence for scoring                             │
+  │  All agents traced in Langfuse for observability                         │
   └──────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -56,7 +57,7 @@ AI-powered tool that discovers, enriches, and scores early-stage startups in the
   │  Scorer has access to:                                                   │
   │  • Website content (case studies, product descriptions)                  │
   │  • Verified funding stage (from Tavily news search)                      │
-  │  • Independent sources (Crunchbase, TechCrunch, MENA news)               │
+  │  • LinkedIn data (employee count, HQ)                                    │
   │  • All claims grounded with source URLs                                  │
   └──────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -137,16 +138,16 @@ streamlit run app.py
 ### Key Features
 | Feature | Description |
 |---------|-------------|
-| **⚡ Gemini AI Search** | Quick candidate generation (~15s) — has training cutoff, improved over time |
-| **� URL Verification** | HEAD requests verify website + LinkedIn URLs exist |
-| **📊 Stage Verification** | Tavily searches news sources to verify funding stage |
+| **🔍 Tavily Smart Search** | Stage + MENA filters baked into query for precise results |
+| **📂 Selected Sources Only** | Searches ONLY user-selected domains (Crunchbase, Magnitt, etc.) |
+| **🔗 URL Verification** | HEAD requests verify website + LinkedIn URLs exist |
+| **📊 Stage Finder Agent** | Tavily searches news to verify funding stage |
 | **📄 Website Content** | Fetches website content (case studies, product info) for scorer |
-| **🔍 Independent Sources** | Tavily searches Crunchbase, TechCrunch, MENA news for grounding |
 | **🧠 Learning System** | Blacklists ineligible companies — search gets faster over time |
-| **Tavily Fallback** | If Gemini returns nothing, falls back to Tavily search |
+| **📈 Langfuse Tracing** | All agents traced for observability and debugging |
 | **MENA Filter** | Only MENA-headquartered companies |
 | **Size Filter** | Max 100 employees (tunable) |
-| **Stage Filter** | Series B and earlier only (verified from Tavily news) |
+| **Stage Filter** | Series B and earlier only (verified from news) |
 | **Evidence in Table** | Each score shows quote + source URL |
 | **VC Analyst Chat** | Dual output: grounded analysis + VC interpretation |
 

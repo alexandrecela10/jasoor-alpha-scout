@@ -37,8 +37,8 @@ except Exception:
 from config import PORTFOLIO_COMPANIES, SCORING_DIMENSIONS, DEFAULT_SOURCES, BENCHMARK_MENA_STARTUPS, SCOUT_MODES
 from ingest import get_simulated_inbound, extract_company_from_website, extract_company_from_text
 from models import ScoredCompany
-from search import search_similar_companies as search_tavily  # Tavily fallback
-from search_gemini import search_with_gemini, verify_urls_exist, verify_and_enrich  # Primary: Gemini
+from search import search_similar_companies  # Primary: Tavily with improved query
+from source_enrichment import enrich_search_results, find_funding_stage, is_early_stage, fetch_website_content
 from scorer import score_companies
 from visualizer import create_matrix_plot, get_axis_options, AXIS_LABELS
 from reporting import (
@@ -1000,52 +1000,26 @@ if search_button:
                 # Otherwise pass the benchmark_label string for config lookup
                 seed_input = custom_attrs if custom_attrs else benchmark_label
                 
-                # PRIMARY: Use Gemini search (fast, pre-filtered)
-                st.write("⚡ Using Gemini AI search (fast mode)...")
-                results = search_with_gemini(
+                # Determine target stage for search
+                target_stage = "early-stage" if early_stage_only else "any"
+                
+                # PRIMARY: Tavily search with stage + MENA filters baked in
+                # Searches ONLY the selected source domains
+                st.write(f"� Searching {len(custom_sources)} sources for {target_stage} MENA startups...")
+                results = search_similar_companies(
                     seed=seed_input,
                     criteria=selected_criteria,
                     location=location,
+                    sources=custom_sources,  # ONLY search these domains
+                    exclusions=all_exclusions,
                     max_results=max_results,
-                    max_employees=max_employees if enable_size_filter else 9999,
-                    early_stage_only=early_stage_only,
+                    target_stage=target_stage,
                 )
                 
-                # FALLBACK: If Gemini returns nothing, try Tavily
-                if not results:
-                    st.write("🔄 Gemini returned no results, trying Tavily search...")
-                    results = search_tavily(
-                        seed=seed_input,
-                        criteria=selected_criteria,
-                        location=location,
-                        sources=custom_sources,
-                        exclusions=all_exclusions,
-                        max_results=max_results,
-                    )
-                
-                # Grounded verification + enrichment (before scoring)
-                # Gemini is for QUICK CANDIDATE GENERATION only (training cutoff)
-                # Tavily provides grounded, real-time data from selected sources
+                # Enrichment: Website/LinkedIn verification + Stage verification + Website content
                 filtered_out_companies = []
-                if results:
-                    st.write("🔗 Verifying website & LinkedIn URLs...")
-                    st.write("📊 Verifying funding stages from recent news (Tavily)...")
-                    st.write("📄 Fetching website content for scoring...")
-                    st.write("🔍 Searching independent sources (Crunchbase, TechCrunch, MENA news)...")
-                    results, filtered_out_companies = verify_and_enrich(
-                        results,
-                        verify_urls=True,  # Check website + LinkedIn exist
-                        verify_stage=True,  # Stage Agent verifies from Tavily news
-                        fetch_website_content=True,  # Get website content for scorer
-                        fetch_independent_sources=True,  # Tavily search on selected sources
-                        early_stage_only=early_stage_only,
-                    )
-                    if filtered_out_companies:
-                        st.write(f"⚠️ Filtered {len(filtered_out_companies)} late-stage companies")
-                
-                # Deep enrichment is now OPTIONAL (for due diligence on specific companies)
                 enrichments = {}
-                if enrich_with_linkedin and results and False:  # Disabled - use verify_and_enrich instead
+                if enrich_with_linkedin and results:
                     st.write("🔗 Enriching with website, LinkedIn, and funding data...")
                     
                     # Create trace for Langfuse evaluation with user/session tracking

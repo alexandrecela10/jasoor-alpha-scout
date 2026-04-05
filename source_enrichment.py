@@ -27,6 +27,7 @@ from tavily import TavilyClient
 from llm_client import call_gemini, parse_json_response
 from models import SearchResult
 from persistence import add_to_blacklist, get_blacklist_set, _normalize_company_name
+from tracing import create_trace, create_generation
 
 logger = logging.getLogger(__name__)
 
@@ -752,6 +753,13 @@ def find_funding_stage(company_name: str, known_info: Dict = None) -> Optional[E
     """
     logger.info(f"🔍 Stage Finder: Searching for {company_name} funding stage")
     
+    # Create Langfuse trace for this agent
+    trace = create_trace(
+        name="stage_finder_agent",
+        input_data={"company_name": company_name, "known_info": known_info},
+        metadata={"agent": "stage_finder"},
+    )
+    
     try:
         client = get_tavily_client()
         
@@ -860,10 +868,22 @@ IMPORTANT: The quote must be an EXACT substring from the content above."""
         if stage_data.get("amount"):
             field.sources[0].quote += f" (Amount: {stage_data['amount']})"
         
+        # Update Langfuse trace with success
+        if trace:
+            try:
+                trace.update(output={"stage": normalized, "verified": verified})
+            except Exception:
+                pass
+        
         return field
         
     except Exception as e:
         logger.error(f"Stage finder failed for {company_name}: {e}")
+        if trace:
+            try:
+                trace.update(output={"error": str(e)})
+            except Exception:
+                pass
         return None
 
 

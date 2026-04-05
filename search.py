@@ -116,6 +116,7 @@ def build_search_query(
     criteria: List[str] = None,
     location: str = None,
     include_filters: bool = True,
+    target_stage: str = "early-stage",
 ) -> str:
     """
     Build a search query from the seed company's 6 structured attributes.
@@ -134,14 +135,15 @@ def build_search_query(
     6. company_size - What stage are they at?
 
     Args:
-        include_filters: If True, bakes eligibility filters into query (MENA, early-stage, <100 employees)
+        include_filters: If True, bakes eligibility filters into query (MENA, early-stage)
                         This helps Tavily return more relevant results upfront.
+        target_stage: Target funding stage filter ("early-stage", "seed", "series-a", etc.)
 
     Example output:
-    "startups solving climate change carbon removal B2B corporations Climate Tech in GCC MENA"
+    "early-stage startup seed series-A fintech UAE Saudi MENA similar to Byanat"
 
     Why this format? Tavily works best with natural language queries.
-    We include only the criteria the user selected.
+    We bake in stage + location filters for more precise results.
     """
     # Normalize input to a dict of attributes
     if isinstance(seed, str):
@@ -159,7 +161,21 @@ def build_search_query(
     else:
         raise ValueError(f"seed must be str, CompanyProfile, or dict, got {type(seed)}")
     
-    query_parts = [f"startups similar to {seed_name}"]
+    # Start with stage filter (most important for narrowing results)
+    # This ensures Tavily prioritizes early-stage companies
+    query_parts = []
+    if include_filters:
+        if target_stage == "early-stage":
+            query_parts.append("early-stage startup seed series-A")
+        elif target_stage == "seed":
+            query_parts.append("seed-stage startup pre-seed")
+        elif target_stage == "series-a":
+            query_parts.append("series-A startup")
+        else:
+            query_parts.append(f"{target_stage} startup")
+    
+    # Add seed company reference
+    query_parts.append(f"similar to {seed_name}")
 
     # Default to all 6 criteria if none specified
     if criteria is None:
@@ -170,38 +186,28 @@ def build_search_query(
     if "problem_statement" in criteria:
         problem = company_data.get("problem_statement", "")
         if problem:
-            query_parts.append(problem[:80])
+            query_parts.append(problem[:60])  # Shortened to fit more criteria
 
     if "target_clients" in criteria:
         clients = company_data.get("target_clients", "")
         if clients:
-            query_parts.append(clients[:60])
+            query_parts.append(clients[:40])  # Shortened
 
     if "industry_vertical" in criteria:
         vertical = company_data.get("industry_vertical", "")
         if vertical:
-            query_parts.append(f"in {vertical} sector")
+            query_parts.append(f"{vertical}")
 
     if "technology" in criteria:
         tech = company_data.get("technology", "")
         if tech:
-            query_parts.append(tech[:80])
+            query_parts.append(tech[:50])
 
-    if "location" in criteria:
+    # MENA location filter - always include for precise results
+    if "location" in criteria or include_filters:
         loc = location or company_data.get("location", "MENA")
-        query_parts.append(f"in {loc} MENA Middle East")
-
-    if "company_size" in criteria:
-        size = company_data.get("company_size", "")
-        if size:
-            query_parts.append(size[:40])
-        else:
-            query_parts.append("early-stage startup seed series-A")
-
-    # Bake eligibility filters into query for better upfront results
-    # This helps Tavily return MENA early-stage startups directly
-    if include_filters:
-        query_parts.append("early-stage startup")
+        # Include specific MENA countries for better matching
+        query_parts.append(f"MENA UAE Saudi Arabia Egypt Jordan")
 
     # Tavily has a 400 character limit - truncate if needed
     query = " ".join(query_parts)
@@ -219,9 +225,10 @@ def search_similar_companies(
     sources: List[str] = None,
     exclusions: List[str] = None,
     max_results: int = 10,
+    target_stage: str = "early-stage",
 ) -> List[SearchResult]:
     """
-    Find companies similar to a seed company.
+    Find companies similar to a seed company using Tavily search.
     
     REUSABLE: Accepts either:
     - str: Company name (looks up in PORTFOLIO_COMPANIES for backward compat)
@@ -231,13 +238,20 @@ def search_similar_companies(
     Args:
         seed:         Seed company — name string, CompanyProfile, or attributes dict
         criteria:     Which similarity criteria to use (e.g., ["technology", "location"])
-        location:     Override location filter (default: seed company's location)
-        sources:      Websites to prioritize (default: DEFAULT_SOURCES)
+        location:     Override location filter (default: MENA)
+        sources:      Websites to search (ONLY these domains will be searched)
         exclusions:   Keywords to exclude (e.g., ["raises", "funding round"])
         max_results:  How many companies to return (default: 10)
+        target_stage: Target funding stage ("early-stage", "seed", "series-a")
 
     Returns:
         List of SearchResult objects, each with source_url attached.
+    
+    Pipeline:
+        1. Build query with stage + MENA filters baked in
+        2. Search Tavily on ONLY the specified source domains
+        3. Extract company data using Gemini
+        4. Return structured SearchResult objects
     """
     # Normalize seed to get name for logging/tracing
     if isinstance(seed, str):
@@ -264,8 +278,8 @@ def search_similar_companies(
     )
 
     try:
-        # Step 1: Build the search query — accepts str, CompanyProfile, or dict
-        query = build_search_query(seed, criteria, location)
+        # Step 1: Build the search query with stage + MENA filters baked in
+        query = build_search_query(seed, criteria, location, target_stage=target_stage)
         logger.info(f"Search query: {query}")
 
         # Step 2: Call Tavily API
