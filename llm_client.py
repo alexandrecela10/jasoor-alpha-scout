@@ -15,7 +15,7 @@ import concurrent.futures
 from typing import Dict, Optional
 
 from google import genai
-from tracing import create_generation
+from tracing import create_generation, create_trace, get_langfuse
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +75,11 @@ def call_gemini(
     # Prepend grounding rules to every prompt
     full_prompt = f"{GROUNDING_INSTRUCTION}\n\n---\n\n{prompt}"
 
-    # Log to Langfuse if tracing is active
+    # Log to Langfuse — auto-create trace if none provided
     generation = None
-    if trace is not None:
+    lf = get_langfuse()
+    if lf is not None:
+        # Always log to Langfuse, even without explicit trace
         generation = create_generation(
             name=span_name, model=model_to_use,
             input_data=full_prompt, metadata=metadata or {},

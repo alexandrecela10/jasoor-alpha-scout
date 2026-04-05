@@ -48,10 +48,15 @@ AI-powered tool that discovers, enriches, and scores early-stage startups in the
 
 ## User Stories
 
-### 1. **Find Similar Companies**
+### 1. **Find Similar Companies** (Portfolio Mode)
 > *"I want to find MENA startups similar to my portfolio companies"*
 
 Select a seed company → Set criteria → Search returns matching startups with verified data.
+
+### 1b. **Evaluate Inbound Pitches** (Inbound Mode)
+> *"I received a pitchdeck and want to quickly evaluate this company"*
+
+Paste pitchdeck text or company URLs → System enriches with **both document data AND online sources** (website, LinkedIn, funding news) → Score and compare against portfolio.
 
 ### 2. **Filter by Hard Criteria**
 > *"I only want early-stage startups (<100 employees, Series B or earlier) in MENA"*
