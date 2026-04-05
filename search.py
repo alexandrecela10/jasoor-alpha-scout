@@ -201,9 +201,15 @@ def build_search_query(
     # Bake eligibility filters into query for better upfront results
     # This helps Tavily return MENA early-stage startups directly
     if include_filters:
-        query_parts.append("startup under 100 employees seed series-A series-B early-stage")
+        query_parts.append("early-stage startup")
 
-    return " ".join(query_parts)
+    # Tavily has a 400 character limit - truncate if needed
+    query = " ".join(query_parts)
+    if len(query) > 380:  # Leave some buffer
+        query = query[:380].rsplit(" ", 1)[0]  # Cut at last word boundary
+        logger.warning(f"Query truncated to {len(query)} chars (Tavily limit: 400)")
+    
+    return query
 
 
 def search_similar_companies(
