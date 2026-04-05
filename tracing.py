@@ -97,39 +97,36 @@ def create_trace(
         return None
 
     try:
-        # Generate a unique trace ID for scoring
-        import uuid
-        trace_id = lf.create_trace_id()
-        
-        # Use start_span to create a trace-like grouping
-        span = lf.start_span(
+        # Use lf.trace() - the standard Langfuse API that works across versions
+        trace = lf.trace(
             name=name,
             input=input_data,
             metadata=metadata,
+            user_id=user_id,
+            session_id=session_id,
         )
         
-        # Create a score directly with user/session info
-        # Langfuse scores are attached via trace_id
-        lf.create_score(
-            trace_id=trace_id,
-            name="trace_created",
-            value=1.0,
-            comment=f"user={user_id}, session={session_id}",
-        )
+        logger.info(f"Created Langfuse trace: {trace.id} (user={user_id}, session={session_id})")
         
-        logger.info(f"Created Langfuse span: {trace_id} (user={user_id}, session={session_id})")
-        
-        # Return a simple object with the trace_id for scoring
+        # Return a wrapper with update/end methods for compatibility
         class TraceWrapper:
-            def __init__(self, trace_id, span):
-                self.id = trace_id
-                self._span = span
+            def __init__(self, trace):
+                self.id = trace.id
+                self._trace = trace
             
-            def update(self, **kwargs):
-                """No-op update method for compatibility."""
-                pass
+            def update(self, output=None, level=None, **kwargs):
+                """Update the trace with output data."""
+                try:
+                    if output:
+                        self._trace.update(output=output)
+                except Exception:
+                    pass
+            
+            def end(self):
+                """End the trace."""
+                pass  # Langfuse auto-ends traces
         
-        return TraceWrapper(trace_id, span)
+        return TraceWrapper(trace)
     except Exception as e:
         # Tracing should never crash the app — log and continue
         logger.error(f"Failed to create trace: {e}")

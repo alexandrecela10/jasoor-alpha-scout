@@ -482,8 +482,12 @@ Return ONLY the JSON array, no other text."""
             span_name="extract_companies",
             metadata={"raw_results_count": len(raw_results)},
         )
+        
+        logger.info(f"Gemini extraction response length: {len(response) if response else 0} chars")
 
         data = parse_json_response(response)
+        
+        logger.info(f"Parsed JSON type: {type(data).__name__}, length: {len(data) if isinstance(data, (list, dict)) else 'N/A'}")
 
         # Handle both list and dict responses
         if isinstance(data, dict):
@@ -491,7 +495,8 @@ Return ONLY the JSON array, no other text."""
                 logger.warning(f"Extraction failed: {data}")
                 return []
             # Sometimes Gemini wraps the array in a key
-            data = data.get("companies", [])
+            data = data.get("companies", data.get("results", []))
+            logger.info(f"Extracted from dict, got {len(data)} items")
 
         # Build a lookup of raw results by URL for grounding validation
         raw_content_by_url = {
