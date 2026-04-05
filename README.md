@@ -76,37 +76,24 @@ AI-powered tool that discovers, enriches, and scores early-stage startups in the
 
 ## User Stories
 
-### 1. **Find Similar Companies** (Portfolio Mode)
-> *"I want to find MENA startups similar to my portfolio companies"*
+| As a... | I want to... | So that... |
+|---------|--------------|------------|
+| **VC Analyst** | Find startups similar to my portfolio | I can source new deals efficiently |
+| **VC Analyst** | Evaluate inbound pitches quickly | I can triage 10x more deals |
+| **VC Analyst** | Filter by MENA, stage, and size | I only see eligible companies |
+| **VC Analyst** | Score companies on key dimensions | I can compare objectively |
+| **VC Analyst** | Get AI-powered insights | I can spot patterns I might miss |
+| **VC Analyst** | Save and continue later | I don't lose my work |
 
-Select a seed company → Set criteria → Search returns matching startups with verified data.
+### 3 Deal Sourcing Workflows
 
-### 1b. **Evaluate Inbound Pitches** (Inbound Mode)
-> *"I received a pitchdeck and want to quickly evaluate this company"*
+| Mode | Use Case | Input | Output |
+|------|----------|-------|--------|
+| **📁 Portfolio Benchmark** | Find companies like your winners | Select portfolio company | Similar MENA startups |
+| **🌟 MENA Success Stories** | Find early versions of proven companies | Select Tabby, Careem, etc. | Pre-Series A lookalikes |
+| **� Inbound Candidates** | Evaluate pitches you received | Paste pitchdeck or URLs | Scored & enriched profiles |
 
-Paste pitchdeck text or company URLs → System enriches with **both document data AND online sources** (website, LinkedIn, funding news) → Score and compare against portfolio.
-
-### 2. **Filter by Hard Criteria**
-> *"I only want early-stage startups (<100 employees, Series B or earlier) in MENA"*
-
-Hard filters automatically remove companies that don't meet size, location, or funding stage requirements.
-
-### 3. **Score & Compare**
-> *"I want to systematically evaluate companies on key dimensions"*
-
-Each company scored on: **Offer Power**, **Sales Ability**, **Tech Moat**, **Founder Strength**.
-
-### 4. **Get AI Insights**
-> *"I want an AI analyst to help me understand the data"*
-
-VC Analyst chat provides **dual output**:
-- **📊 Grounded Analysis** — Only verified evidence, exact quotes
-- **💡 VC Interpretation** — Pattern-matched insights from 15+ years experience
-
-### 5. **Save & Continue Later**
-> *"I want to pick up where I left off"*
-
-Load previous searches, add companies to target list, export to Excel.
+See [`docs/`](docs/) for detailed workflow guides.
 
 ---
 
