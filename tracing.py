@@ -99,16 +99,18 @@ def create_trace(
     try:
         # Use trace() instead of start_observation() to get a proper trace
         # that can receive scores in the Langfuse evaluations section
-        return lf.trace(
+        trace = lf.trace(
             name=name,
             input=input_data,
             metadata=metadata,
             user_id=user_id,
             session_id=session_id,
         )
+        logger.info(f"Created Langfuse trace: {trace.id} (user={user_id}, session={session_id})")
+        return trace
     except Exception as e:
         # Tracing should never crash the app — log and continue
-        logger.debug(f"Failed to create trace: {e}")
+        logger.error(f"Failed to create trace: {e}")
         return None
 
 
@@ -169,17 +171,24 @@ def score_trace(trace_id: str, name: str, value: float, comment: str = None):
     """
     lf = get_langfuse()
     if lf is None:
+        logger.warning(f"Langfuse not initialized, skipping score: {name}")
+        return
+    
+    if not trace_id:
+        logger.warning(f"No trace_id provided, skipping score: {name}")
         return
     
     try:
+        logger.info(f"Scoring trace {trace_id}: {name}={value}")
         lf.score(
             trace_id=trace_id,
             name=name,
             value=value,
             comment=comment,
         )
+        logger.info(f"Score sent successfully: {name}")
     except Exception as e:
-        logger.debug(f"Failed to score trace: {e}")
+        logger.error(f"Failed to score trace {trace_id}: {e}")
 
 
 def evaluate_enrichment_batch(
