@@ -792,6 +792,7 @@ with st.sidebar:
     # --- Scheduled Searches ---
     with st.expander("📅 Scheduled Searches", expanded=False):
         st.caption("*Automated searches with email reports*")
+        st.warning("🚧 **Coming Soon** — Email scheduling will be enabled in the next release.")
         scheduled = get_scheduled_searches()
         if scheduled:
             for ss in scheduled:
