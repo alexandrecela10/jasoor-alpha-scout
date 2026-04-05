@@ -1799,15 +1799,19 @@ else:
     # Show what the tool does
     with st.expander("ℹ️ How Alpha Scout Works"):
         st.markdown("""
-        1. **Select a Seed** — Choose a Jasoor portfolio company (e.g., Byanat AI)
-        2. **Search** — Tavily finds 10 similar companies from trusted MENAT sources
-        3. **Score** — Gemini analyzes each company on 4 dimensions:
+        1. **Select a Seed** — Choose a portfolio company or enter an inbound pitch
+        2. **Search** — Tavily finds up to 100 similar companies from trusted MENA sources
+        3. **Enrich** — 3 parallel agents find website, LinkedIn, and funding stage
+        4. **Filter** — Auto-filter by employee count (<100), MENA HQ, and stage (≤Series B)
+        5. **Score** — Gemini analyzes each company on 4 dimensions:
            - **Offer Power** (Hormozi's Value Equation)
            - **Sales Ability** (traction evidence)
            - **Tech Moat** (defensibility)
            - **Founder Strength** (track record)
-        4. **Visualize** — Interactive 2x2 matrix to compare companies
-        5. **Export** — PDF report or email to your team
+        6. **Compare** — Side-by-side table with evidence quotes and source URLs
+        7. **Visualize** — Interactive 2x2 matrix to spot outliers
+        8. **VC Analyst** — AI chat with grounded analysis + VC interpretation
+        9. **Export** — PDF report or add to target list
 
         **Grounding Guarantee:** Every score includes cited evidence. If data isn't
         available, the system returns "N/A" instead of guessing.
