@@ -160,13 +160,6 @@ The search engine **learns over time** by maintaining a blacklist of companies t
 3. This saves API calls and makes searches faster over time
 4. Users can view, edit, or clear the blacklist in the sidebar
 
-### Performance
-| Metric | Old (Tavily) | New (Gemini) |
-|--------|--------------|--------------|
-| **10 companies** | ~60s | **~15s** |
-| **Search method** | Tavily + 3 agents | Single Gemini call |
-| **Filtering** | Post-enrichment | Pre-filtered in query |
-| **Learning speedup** | N/A | Skips blacklisted (0s) |
 
 ---
 
