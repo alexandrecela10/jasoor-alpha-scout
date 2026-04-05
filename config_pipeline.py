@@ -162,16 +162,9 @@ DEFAULT_SOURCES = [
     "magnitt.com",          # MENA & Africa startup data platform
     "zawya.com",            # MENA business intelligence
     "crunchbase.com",       # Funding data and company profiles
+    "pitchbook.com",        # Funding data and company profiles
     "producthunt.com",      # Global product launches (many MENA founders post here)
-    # LinkedIn MENA Startup Channels
-    "linkedin.com/company/maborco",          # MENA Business Review
-    "linkedin.com/company/flat6labs",        # Flat6Labs accelerator
-    "linkedin.com/company/500-global",       # 500 Global (active in MENA)
-    "linkedin.com/company/startupbootcamp",  # Startup Bootcamp
-    "linkedin.com/company/techstars",        # Techstars
-    "linkedin.com/company/antler",           # Antler (active in MENA)
-    "linkedin.com/company/seedstars"     # Seedstars                         
-    
+    "linkedin.com",         # Company pages and employee data
 ]
 
 
