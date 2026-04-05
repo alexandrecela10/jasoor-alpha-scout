@@ -68,13 +68,26 @@ def get_langfuse() -> Langfuse:
     return _langfuse_client
 
 
-def create_trace(name: str, input_data: dict = None, metadata: dict = None):
+def create_trace(
+    name: str, 
+    input_data: dict = None, 
+    metadata: dict = None,
+    user_id: str = None,
+    session_id: str = None,
+):
     """
     Create a new trace (top-level grouping) in Langfuse.
 
     A "trace" groups related LLM calls together. For example:
     - "search_similar_companies" trace contains the Tavily search + extraction calls
     - "score_company" trace contains the 4 scoring dimension calls
+
+    Args:
+        name: Name of the trace (e.g., "source_enrichment")
+        input_data: Input data to log
+        metadata: Additional metadata
+        user_id: User identifier for tracking (e.g., email or anonymous ID)
+        session_id: Session identifier for grouping traces in a session
 
     Returns the trace object, or None if tracing is disabled.
     Uses lf.trace() to create a proper trace that can receive scores.
@@ -90,6 +103,8 @@ def create_trace(name: str, input_data: dict = None, metadata: dict = None):
             name=name,
             input=input_data,
             metadata=metadata,
+            user_id=user_id,
+            session_id=session_id,
         )
     except Exception as e:
         # Tracing should never crash the app — log and continue

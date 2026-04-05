@@ -61,6 +61,13 @@ from source_enrichment import enrich_search_results, CompanyEnrichment, DEFAULT_
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Generate a unique session ID for Langfuse tracking
+import uuid
+if "langfuse_session_id" not in st.session_state:
+    st.session_state.langfuse_session_id = f"session_{uuid.uuid4().hex[:8]}"
+if "langfuse_user_id" not in st.session_state:
+    st.session_state.langfuse_user_id = f"user_{uuid.uuid4().hex[:8]}"
+
 # ---------------------------------------------------------------------------
 # Page Config
 # ---------------------------------------------------------------------------
@@ -960,11 +967,13 @@ if search_button:
                 if enrich_with_linkedin and results:
                     st.write("🔗 Enriching with website, LinkedIn, and funding data...")
                     
-                    # Create trace for Langfuse evaluation
+                    # Create trace for Langfuse evaluation with user/session tracking
                     enrichment_trace = create_trace(
                         name="source_enrichment",
                         input_data={"company_count": len(results), "seed": benchmark_label},
-                        metadata={"mode": scout_mode}
+                        metadata={"mode": scout_mode},
+                        user_id=st.session_state.langfuse_user_id,
+                        session_id=st.session_state.langfuse_session_id,
                     )
                     trace_id = enrichment_trace.id if enrichment_trace else None
                     
@@ -1034,11 +1043,13 @@ if search_button:
                     if enrich_with_linkedin:
                         st.write("🔗 Enriching with website, LinkedIn, and funding data...")
                         
-                        # Create trace for Langfuse evaluation
+                        # Create trace for Langfuse evaluation with user/session tracking
                         enrichment_trace = create_trace(
                             name="source_enrichment",
                             input_data={"company_count": len(results), "source": inbound_source},
-                            metadata={"mode": "inbound"}
+                            metadata={"mode": "inbound"},
+                            user_id=st.session_state.langfuse_user_id,
+                            session_id=st.session_state.langfuse_session_id,
                         )
                         trace_id = enrichment_trace.id if enrichment_trace else None
                         
