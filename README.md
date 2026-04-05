@@ -11,7 +11,7 @@ AI-powered tool that discovers, enriches, and scores early-stage startups in the
 
 ### 🎬 Demo Video
 
-*Coming soon — video demo will be uploaded to YouTube*
+(https://www.youtube.com/watch?v=PyaJmPB9MVI&feature=youtu.be)
 
 ---
 
@@ -119,21 +119,6 @@ See [`docs/`](docs/) for detailed workflow guides.
 ---
 
 ## Usage Guide
-
-### Quick Start
-```bash
-# 1. Setup
-cd alpha_scout
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-# 2. Configure API keys
-cp .env.example .env
-# Edit .env with: GEMINI_API_KEY, TAVILY_API_KEY
-
-# 3. Run
-streamlit run app.py
-```
 
 ### Basic Workflow
 1. **Sidebar** → Select seed company or enter custom criteria
@@ -288,43 +273,6 @@ User clicks "Search & Score"
 
 ---
 
-## Deployment (Google Cloud)
-
-### Option 1: Cloud Run (Recommended)
-```bash
-# Build container
-gcloud builds submit --tag gcr.io/PROJECT_ID/alpha-scout
-
-# Deploy
-gcloud run deploy alpha-scout \
-  --image gcr.io/PROJECT_ID/alpha-scout \
-  --platform managed \
-  --allow-unauthenticated \
-  --set-env-vars "GEMINI_API_KEY=xxx,TAVILY_API_KEY=xxx"
-```
-
-### Option 2: Compute Engine
-```bash
-# SSH into VM
-gcloud compute ssh alpha-scout-vm
-
-# Clone and run
-git clone <repo>
-cd alpha_scout
-pip install -r requirements.txt
-streamlit run app.py --server.port 8080
-```
-
-### Required Environment Variables
-```
-GEMINI_API_KEY=your_gemini_key
-TAVILY_API_KEY=your_tavily_key
-LANGFUSE_PUBLIC_KEY=optional
-LANGFUSE_SECRET_KEY=optional
-```
-
----
-
 ## Grounding Guarantee
 
 Every piece of information is verified by **3 specialized agents**:
@@ -412,3 +360,29 @@ All metrics are visible in the Langfuse dashboard, enabling:
 - 🔍 **Debugging** — Inspect failing LLM calls
 - 💰 **Cost tracking** — Monitor token usage
 - 🎯 **A/B testing** — Compare prompt variations
+
+---
+
+## Quick Start
+
+```bash
+# 1. Setup
+cd alpha_scout
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Configure API keys
+cp .env.example .env
+# Edit .env with: GEMINI_API_KEY, TAVILY_API_KEY
+
+# 3. Run
+streamlit run app.py
+```
+
+### Required Environment Variables
+```
+GEMINI_API_KEY=your_gemini_key
+TAVILY_API_KEY=your_tavily_key
+LANGFUSE_PUBLIC_KEY=optional
+LANGFUSE_SECRET_KEY=optional
+```
