@@ -1252,74 +1252,6 @@ if search_button:
     flush_langfuse()
 
 
-# --- Nudge: Schedule Search ---
-if st.session_state.get("show_save_nudge") and st.session_state.get("current_search_id"):
-    # Display Share ID prominently for email sharing
-    share_id = st.session_state.get("current_share_id")
-    if share_id:
-        st.success(f"🔗 **Share ID: `{share_id}`** — Include this in email alerts so recipients can load results directly.")
-    
-    st.info("💡 **Want daily updates?** Schedule this search to run automatically and receive email reports.")
-    
-    with st.expander("📅 Schedule This Search", expanded=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            schedule_name = st.text_input(
-                "Schedule name:",
-                value=f"{benchmark_label} Daily Scout",
-                key="schedule_name",
-            )
-            schedule_email = st.text_input(
-                "Email for reports:",
-                placeholder="analyst@jasoor.vc",
-                key="schedule_email",
-            )
-        
-        with col2:
-            schedule_time = st.time_input(
-                "Run at (UAE time):",
-                value=None,
-                key="schedule_time",
-            )
-            if schedule_time is None:
-                schedule_time_str = "07:00"
-            else:
-                schedule_time_str = schedule_time.strftime("%H:%M")
-            
-            schedule_freq = st.selectbox(
-                "Frequency:",
-                options=["daily", "weekly", "monthly"],
-                index=0,
-                key="schedule_freq",
-            )
-        
-        col_a, col_b, col_c = st.columns(3)
-        with col_a:
-            if st.button("📅 Schedule Search", type="primary", use_container_width=True):
-                if schedule_email:
-                    schedule_search(
-                        search_id=st.session_state.current_search_id,
-                        name=schedule_name,
-                        email_recipient=schedule_email,
-                        schedule_time=schedule_time_str,
-                        schedule_frequency=schedule_freq,
-                    )
-                    st.session_state.show_save_nudge = False
-                    st.success(f"✅ Scheduled! You'll receive reports at {schedule_time_str} UAE time.")
-                    st.rerun()
-                else:
-                    st.warning("Please enter an email address.")
-        
-        with col_b:
-            if st.button("⏭️ Skip", use_container_width=True):
-                st.session_state.show_save_nudge = False
-                st.rerun()
-        
-        with col_c:
-            st.caption(f"Search ID: {st.session_state.current_search_id}")
-
-
 # --- Display Results ---
 if st.session_state.scoring_complete and st.session_state.scored_companies:
     scored_companies: List[ScoredCompany] = st.session_state.scored_companies
@@ -1799,6 +1731,77 @@ if st.session_state.scoring_complete and st.session_state.scored_companies:
             st.info("Review results will appear here after running a search.")
 
 # ---------------------------------------------------------------------------
+# Save / Schedule Search — Shows AFTER results are displayed
+# ---------------------------------------------------------------------------
+if st.session_state.get("show_save_nudge") and st.session_state.get("current_search_id"):
+    st.divider()
+    
+    # Display Share ID prominently for email sharing
+    share_id = st.session_state.get("current_share_id")
+    if share_id:
+        st.success(f"🔗 **Share ID: `{share_id}`** — Include this in email alerts so recipients can load results directly.")
+    
+    st.info("💡 **Want daily updates?** Schedule this search to run automatically and receive email reports.")
+    
+    with st.expander("📅 Schedule This Search", expanded=False):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            schedule_name = st.text_input(
+                "Schedule name:",
+                value=f"{benchmark_label} Daily Scout",
+                key="schedule_name",
+            )
+            schedule_email = st.text_input(
+                "Email for reports:",
+                placeholder="analyst@jasoor.vc",
+                key="schedule_email",
+            )
+        
+        with col2:
+            schedule_time = st.time_input(
+                "Run at (UAE time):",
+                value=None,
+                key="schedule_time",
+            )
+            if schedule_time is None:
+                schedule_time_str = "07:00"
+            else:
+                schedule_time_str = schedule_time.strftime("%H:%M")
+            
+            schedule_freq = st.selectbox(
+                "Frequency:",
+                options=["daily", "weekly", "monthly"],
+                index=0,
+                key="schedule_freq",
+            )
+        
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            if st.button("📅 Schedule Search", type="primary", use_container_width=True):
+                if schedule_email:
+                    schedule_search(
+                        search_id=st.session_state.current_search_id,
+                        name=schedule_name,
+                        email_recipient=schedule_email,
+                        schedule_time=schedule_time_str,
+                        schedule_frequency=schedule_freq,
+                    )
+                    st.session_state.show_save_nudge = False
+                    st.success(f"✅ Scheduled! You'll receive reports at {schedule_time_str} UAE time.")
+                    st.rerun()
+                else:
+                    st.warning("Please enter an email address.")
+        
+        with col_b:
+            if st.button("⏭️ Skip", use_container_width=True):
+                st.session_state.show_save_nudge = False
+                st.rerun()
+        
+        with col_c:
+            st.caption(f"Search ID: {st.session_state.current_search_id}")
+
+# ---------------------------------------------------------------------------
 # VC Analyst Chat — Bonus Feature (Collapsed by Default)
 # Only shows when user has target companies
 # ---------------------------------------------------------------------------
@@ -1808,7 +1811,7 @@ if targets:
     st.divider()
     
     # Collapsed expander — VC Chat is a BONUS, not the main feature
-    with st.expander("🧠 **Bonus: Ask the VC Analyst** — Get AI insights on your targets", expanded=False):
+    with st.expander("🧠 **Bonus: Ask the VC Analyst** — Get AI insights on the companies in your target list", expanded=False):
         st.caption("*Chat with a seasoned AI VC Analyst about your target companies*")
         st.markdown("🔒 *Local / Sovereign AI chat coming soon — fully protected, on-premise processing*")
         
