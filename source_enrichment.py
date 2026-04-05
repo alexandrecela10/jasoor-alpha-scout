@@ -899,23 +899,23 @@ def is_early_stage(funding_stage: str) -> bool:
     
     stage_lower = funding_stage.lower().strip()
     
-    # Find position in order
-    cutoff_idx = -1
-    stage_idx = -1
+    # Early stages that ALWAYS pass (explicit whitelist)
+    early_stages = ["pre-seed", "pre seed", "preseed", "seed", "angel", "series a", "series b"]
+    for early in early_stages:
+        if early in stage_lower:
+            logger.info(f"Stage '{funding_stage}' is early-stage (matched '{early}')")
+            return True
     
-    for i, stage in enumerate(FUNDING_STAGES_ORDER):
-        if stage == EARLY_STAGE_CUTOFF:
-            cutoff_idx = i
-        if stage in stage_lower or stage_lower in stage:
-            stage_idx = i
-            break
+    # Late stages that NEVER pass (explicit blacklist)
+    late_stages = ["series c", "series d", "series e", "series f", "ipo", "public", "acquired", "unicorn"]
+    for late in late_stages:
+        if late in stage_lower:
+            logger.info(f"Stage '{funding_stage}' is late-stage (matched '{late}')")
+            return False
     
-    # If we can't determine the stage, pass the filter
-    if stage_idx == -1:
-        return True
-    
-    # Pass if stage is at or before cutoff
-    return stage_idx <= cutoff_idx
+    # Unknown stage - benefit of doubt, pass the filter
+    logger.info(f"Stage '{funding_stage}' is unknown - passing filter")
+    return True
 
 
 # =============================================================================

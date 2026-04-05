@@ -97,36 +97,58 @@ def create_trace(
         return None
 
     try:
-        # Use lf.trace() - the standard Langfuse API that works across versions
-        trace = lf.trace(
-            name=name,
-            input=input_data,
-            metadata=metadata,
-            user_id=user_id,
-            session_id=session_id,
-        )
+        # Try multiple Langfuse API methods for compatibility across SDK versions
+        trace = None
+        trace_id = None
         
-        logger.info(f"Created Langfuse trace: {trace.id} (user={user_id}, session={session_id})")
+        # Method 1: SDK v3+ uses start_observation
+        if hasattr(lf, 'start_observation'):
+            trace = lf.start_observation(
+                name=name,
+                input=input_data,
+                metadata=metadata,
+            )
+            trace_id = getattr(trace, 'id', None) or str(id(trace))
+        # Method 2: SDK v2 uses trace()
+        elif hasattr(lf, 'trace'):
+            trace = lf.trace(
+                name=name,
+                input=input_data,
+                metadata=metadata,
+                user_id=user_id,
+                session_id=session_id,
+            )
+            trace_id = getattr(trace, 'id', None)
+        # Method 3: Fallback - just return a dummy wrapper
+        else:
+            logger.warning("Langfuse SDK doesn't have trace() or start_observation() - tracing disabled")
+            return None
+        
+        logger.info(f"Created Langfuse trace: {trace_id} (user={user_id}, session={session_id})")
         
         # Return a wrapper with update/end methods for compatibility
         class TraceWrapper:
-            def __init__(self, trace):
-                self.id = trace.id
+            def __init__(self, trace, trace_id):
+                self.id = trace_id
                 self._trace = trace
             
             def update(self, output=None, level=None, **kwargs):
                 """Update the trace with output data."""
                 try:
-                    if output:
+                    if output and hasattr(self._trace, 'update'):
                         self._trace.update(output=output)
                 except Exception:
                     pass
             
             def end(self):
                 """End the trace."""
-                pass  # Langfuse auto-ends traces
+                try:
+                    if hasattr(self._trace, 'end'):
+                        self._trace.end()
+                except Exception:
+                    pass
         
-        return TraceWrapper(trace)
+        return TraceWrapper(trace, trace_id)
     except Exception as e:
         # Tracing should never crash the app — log and continue
         logger.error(f"Failed to create trace: {e}")
