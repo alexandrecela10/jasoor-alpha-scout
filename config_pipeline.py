@@ -162,11 +162,12 @@ DEFAULT_SOURCES = [
     "magnitt.com",          # MENA & Africa startup data platform
     "zawya.com",            # MENA business intelligence
     "arabnet.me",           # Arab tech & startup ecosystem
-    "startupsceneme.com",   # MENA startup scene
     "forbesmiddleeast.com", # Forbes Middle East
     "gulfbusiness.com",     # Gulf business news
     "arabianbusiness.com",  # Arabian business news
     "thenationalnews.com",  # UAE national news (business section)
+    # Crunchbase MENA hub (filtered to MENA HQ companies)
+    "crunchbase.com/hub/middle-east-and-north-africa-startups",
 ]
 
 
