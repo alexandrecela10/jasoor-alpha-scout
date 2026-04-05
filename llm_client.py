@@ -90,7 +90,7 @@ def call_gemini(
         client = _get_client()
         response = client.models.generate_content(
             model=model_to_use, contents=full_prompt,
-            config={"temperature": temperature, "max_output_tokens": 8192},
+            config={"temperature": temperature, "max_output_tokens": 16384},
         )
         return response.text.strip()
 

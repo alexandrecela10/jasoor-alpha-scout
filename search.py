@@ -462,17 +462,15 @@ Return a JSON array with this structure:
     "description": "One-line description from the source",
     "website": "https://company-website.com (REQUIRED - find or construct)",
     "source_url": "URL where this company was found",
-    "source_snippet": "EXACT quote from source that mentions this company name",
+    "source_snippet": "EXACT quote from source (max 100 chars)",
     "location": "Country or region",
     "sector": "Industry sector",
-    "founders": ["Founder 1", "Founder 2"],
-    "founders_linkedin": ["https://linkedin.com/in/...", "..."],
     "funding_stage": "Seed / Series A / etc.",
-    "funding_amount": "$X million or Not Found",
-    "similarity_reason": "Why this company matches the selected criteria"
+    "similarity_reason": "Brief reason why similar (max 50 chars)"
   }}
 ]
 
+IMPORTANT: Keep responses CONCISE. Skip founders and funding_amount - they will be retrieved later.
 Return ONLY the JSON array, no other text."""
 
     try:
