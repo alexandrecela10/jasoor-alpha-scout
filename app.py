@@ -408,6 +408,7 @@ with st.sidebar:
     max_employees = DEFAULT_MAX_EMPLOYEES
     mena_only = True
     early_stage_only = True
+    max_stage = "series_a"  # Default to Series A or earlier
     max_source_age = 180
     excluded_industries = []  # Industries to filter out
     pitchdeck_company_name = ""
@@ -774,13 +775,21 @@ with st.sidebar:
                 st.info("⚠️ Only companies in UAE, Saudi Arabia, Egypt, Jordan, etc. will be included")
         
         with st.expander("🚀 Funding Stage Filter", expanded=True):
-            st.caption("*Only include early-stage companies (Series B and before)*")
-            early_stage_only = st.checkbox(
-                "Series B and earlier only",
-                value=True,
-                help="Filter out Series C, D, E, IPO, and public companies"
+            st.caption("*Only include early-stage companies*")
+            max_stage = st.radio(
+                "Maximum funding stage:",
+                options=["series_a", "series_b"],
+                format_func=lambda x: {
+                    "series_a": "Series A or earlier (Pre-seed, Seed, Series A)",
+                    "series_b": "Series B or earlier (Pre-seed, Seed, Series A, Series B)",
+                }[x],
+                index=0,  # Default to Series A or earlier
+                help="Filter out companies beyond this stage"
             )
-            if early_stage_only:
+            early_stage_only = True  # Always filter late stage
+            if max_stage == "series_a":
+                st.info("⚠️ Only Pre-seed, Seed, Series A companies will be included")
+            else:
                 st.info("⚠️ Only Pre-seed, Seed, Series A, Series B companies will be included")
         
         with st.expander("🚫 Exclude Companies"):
@@ -897,14 +906,22 @@ with st.sidebar:
                 st.info("⚠️ Only companies in UAE, Saudi Arabia, Egypt, Jordan, etc. will be included")
         
         with st.expander("🚀 Funding Stage Filter", expanded=True):
-            st.caption("*Only include early-stage companies (Series B and before)*")
-            early_stage_only = st.checkbox(
-                "Series B and earlier only",
-                value=True,
-                help="Filter out Series C, D, E, IPO, and public companies",
-                key="inbound_early_stage"
+            st.caption("*Only include early-stage companies*")
+            max_stage = st.radio(
+                "Maximum funding stage:",
+                options=["series_a", "series_b"],
+                format_func=lambda x: {
+                    "series_a": "Series A or earlier (Pre-seed, Seed, Series A)",
+                    "series_b": "Series B or earlier (Pre-seed, Seed, Series A, Series B)",
+                }[x],
+                index=0,  # Default to Series A or earlier
+                help="Filter out companies beyond this stage",
+                key="inbound_max_stage"
             )
-            if early_stage_only:
+            early_stage_only = True  # Always filter late stage
+            if max_stage == "series_a":
+                st.info("⚠️ Only Pre-seed, Seed, Series A companies will be included")
+            else:
                 st.info("⚠️ Only Pre-seed, Seed, Series A, Series B companies will be included")
         
         with st.expander("🏭 Industry Exclusion Filter"):
@@ -1276,6 +1293,7 @@ if search_button:
                         max_employees=max_employees if enable_size_filter else 9999,
                         mena_only=mena_only,
                         early_stage_only=early_stage_only,
+                        max_stage=max_stage,
                     )
                     
                     # Run Langfuse evaluations
@@ -1365,6 +1383,7 @@ if search_button:
                         max_employees=max_employees if enable_size_filter else 9999,
                         mena_only=mena_only,
                         early_stage_only=early_stage_only,
+                        max_stage=max_stage,
                     )
                     
                     # Run Langfuse evaluations

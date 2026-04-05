@@ -887,30 +887,42 @@ IMPORTANT: The quote must be an EXACT substring from the content above."""
         return None
 
 
-def is_early_stage(funding_stage: str) -> bool:
+def is_early_stage(funding_stage: str, max_stage: str = "series_b") -> bool:
     """
-    Check if a funding stage is Series B or earlier.
+    Check if a funding stage is within the allowed maximum stage.
     
-    Returns True for: Pre-seed, Seed, Series A, Series B
-    Returns False for: Series C, Series D, IPO, Public, etc.
+    Args:
+        funding_stage: The company's funding stage (e.g., "Series A", "Seed")
+        max_stage: Maximum allowed stage - "series_a" or "series_b"
+    
+    Returns True for stages at or before max_stage.
+    Returns False for stages beyond max_stage.
     """
     if not funding_stage:
         return True  # Unknown stage passes filter (benefit of doubt)
     
     stage_lower = funding_stage.lower().strip()
     
-    # Early stages that ALWAYS pass (explicit whitelist)
-    early_stages = ["pre-seed", "pre seed", "preseed", "seed", "angel", "series a", "series b"]
+    # Define stage hierarchy
+    if max_stage == "series_a":
+        # Only Pre-seed, Seed, Series A allowed
+        early_stages = ["pre-seed", "pre seed", "preseed", "seed", "angel", "series a"]
+        late_stages = ["series b", "series c", "series d", "series e", "series f", "ipo", "public", "acquired", "unicorn"]
+    else:
+        # Pre-seed, Seed, Series A, Series B allowed (default)
+        early_stages = ["pre-seed", "pre seed", "preseed", "seed", "angel", "series a", "series b"]
+        late_stages = ["series c", "series d", "series e", "series f", "ipo", "public", "acquired", "unicorn"]
+    
+    # Check early stages first
     for early in early_stages:
         if early in stage_lower:
-            logger.info(f"Stage '{funding_stage}' is early-stage (matched '{early}')")
+            logger.info(f"Stage '{funding_stage}' passes filter (matched '{early}', max={max_stage})")
             return True
     
-    # Late stages that NEVER pass (explicit blacklist)
-    late_stages = ["series c", "series d", "series e", "series f", "ipo", "public", "acquired", "unicorn"]
+    # Check late stages
     for late in late_stages:
         if late in stage_lower:
-            logger.info(f"Stage '{funding_stage}' is late-stage (matched '{late}')")
+            logger.info(f"Stage '{funding_stage}' filtered out (matched '{late}', max={max_stage})")
             return False
     
     # Unknown stage - benefit of doubt, pass the filter
@@ -1037,6 +1049,7 @@ def enrich_search_results(
     max_employees: int = 100,
     mena_only: bool = True,
     early_stage_only: bool = True,
+    max_stage: str = "series_b",
 ) -> Tuple[List[SearchResult], List[SearchResult], Dict[str, CompanyEnrichment]]:
     """
     Enrich all search results with website and LinkedIn data.
@@ -1049,7 +1062,8 @@ def enrich_search_results(
         search_results: Companies from initial search
         max_employees: Maximum employee count filter
         mena_only: Only include MENA-headquartered companies
-        early_stage_only: Only include Series B and earlier (default: True)
+        early_stage_only: Only include early-stage companies (default: True)
+        max_stage: Maximum funding stage - "series_a" or "series_b" (default)
     
     Returns:
         (passed_filter, filtered_out, enrichments_dict)
@@ -1137,13 +1151,14 @@ def enrich_search_results(
                     passed_filters = False
                     filter_reason = f"Not in MENA ({enrichment.location.value})"
         
-        # Early stage filter (Series B and before)
+        # Early stage filter
         if early_stage_only and passed_filters:
             if enrichment.funding_stage:
                 stage = enrichment.funding_stage.value
-                if not is_early_stage(stage):
+                if not is_early_stage(stage, max_stage):
                     passed_filters = False
-                    filter_reason = f"Too late stage ({stage} > Series B)"
+                    max_stage_label = "Series A" if max_stage == "series_a" else "Series B"
+                    filter_reason = f"Too late stage ({stage} > {max_stage_label})"
         
         # Update SearchResult with funding stage
         if enrichment.funding_stage:
