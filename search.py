@@ -585,6 +585,7 @@ Return ONLY the JSON array, no other text."""
                 grounding_score=grounding_score,
                 raw_source_text=source_content[:2000],  # Store for re-validation
                 website_verified=website_verified,  # New field for HTTP verification result
+                similarity_reason=item.get("similarity_reason", ""),  # Why this company matches
             ))
             
             # Stop once we have enough validated results

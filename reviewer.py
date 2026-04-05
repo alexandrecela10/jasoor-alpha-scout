@@ -135,9 +135,12 @@ COMPANY TO VALIDATE: {seed_company}
 
 OUR CLAIMED PROFILE:
 - Description: {seed_data.get('description', 'N/A')}
-- Tech Edge: {seed_data.get('tech_edge', 'N/A')}
-- Sector: {seed_data.get('sector', 'N/A')}
+- Problem Statement: {seed_data.get('problem_statement', 'N/A')}
+- Target Clients: {seed_data.get('target_clients', 'N/A')}
+- Industry/Sector: {seed_data.get('industry_vertical', 'N/A')}
+- Technology: {seed_data.get('technology', 'N/A')}
 - Location: {seed_data.get('location', 'N/A')}
+- Company Size: {seed_data.get('company_size', 'N/A')}
 - Website: {seed_data.get('website', 'N/A')}
 
 TASK: Validate each field. For each field, determine:
@@ -316,8 +319,10 @@ Source Snippet: {result.source_snippet[:500] if result.source_snippet else 'N/A'
 
 SEED COMPANY: {seed_company}
 - Description: {seed_data.get('description', 'N/A')}
-- Tech Edge: {seed_data.get('tech_edge', 'N/A')}
-- Sector: {seed_data.get('sector', 'N/A')}
+- Problem Statement: {seed_data.get('problem_statement', 'N/A')}
+- Target Clients: {seed_data.get('target_clients', 'N/A')}
+- Industry/Sector: {seed_data.get('industry_vertical', 'N/A')}
+- Technology: {seed_data.get('technology', 'N/A')}
 
 SIMILARITY CRITERIA USED: {criteria_text}
 

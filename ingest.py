@@ -169,12 +169,13 @@ Extract the following and return as JSON:
   "website": "{url}",
   "source_url": "{url}",
   "source_snippet": "Most relevant quote about what the company does",
-  "location": "Country or region",
+  "location": "Country or region (e.g., UAE, Saudi Arabia, Egypt)",
   "sector": "Industry sector",
   "founders": ["Founder name 1", "Founder name 2"],
   "founders_linkedin": [],
   "funding_stage": "Seed / Series A / Pre-seed / etc. or Not Found",
-  "funding_amount": "$X million or Not Found"
+  "funding_amount": "$X million or Not Found",
+  "employee_count": "Number of employees if mentioned, else Not Found"
 }}
 
 RULES:
@@ -208,6 +209,7 @@ Return ONLY the JSON object, no other text."""
             founders_linkedin=data.get("founders_linkedin", []),
             funding_stage=data.get("funding_stage", "Not Found"),
             funding_amount=data.get("funding_amount", "Not Found"),
+            employee_count=data.get("employee_count", "Not Found"),
         )
 
     except Exception as e:
@@ -238,12 +240,13 @@ Extract the following and return as JSON:
   "website": "Company website if mentioned, else Not Found",
   "source_url": "INBOUND — pitchdeck",
   "source_snippet": "Most important quote from the pitch about what they do",
-  "location": "Country or region",
+  "location": "Country or region (e.g., UAE, Saudi Arabia, Egypt)",
   "sector": "Industry sector",
   "founders": ["Founder name 1", "Founder name 2"],
   "founders_linkedin": [],
   "funding_stage": "Seed / Series A / Pre-seed or Not Found",
-  "funding_amount": "$X million or Not Found"
+  "funding_amount": "$X million or Not Found",
+  "employee_count": "Number of employees/team size if mentioned, else Not Found"
 }}
 
 RULES:
@@ -277,6 +280,7 @@ Return ONLY the JSON object, no other text."""
             founders_linkedin=data.get("founders_linkedin", []),
             funding_stage=data.get("funding_stage", "Not Found"),
             funding_amount=data.get("funding_amount", "Not Found"),
+            employee_count=data.get("employee_count", "Not Found"),
         )
 
     except Exception as e:

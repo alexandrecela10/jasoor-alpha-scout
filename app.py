@@ -395,6 +395,14 @@ with st.sidebar:
     benchmark_company = list(BENCHMARK_MENA_STARTUPS.keys())[0]
     inbound_source = "demo"
     website_urls_text = ""
+    # Enrichment defaults (overridden in search filters section)
+    enrich_with_linkedin = False  # Disabled by default for Inbound mode
+    enable_size_filter = False
+    max_employees = DEFAULT_MAX_EMPLOYEES
+    mena_only = True
+    early_stage_only = True
+    max_source_age = 180
+    excluded_industries = []  # Industries to filter out
     pitchdeck_company_name = ""
     pitchdeck_text = ""
 
@@ -412,7 +420,8 @@ with st.sidebar:
         )
         benchmark_label = seed_company
     else:
-        seed_company = list(PORTFOLIO_COMPANIES.keys())[0]  # default to avoid NameError
+        # For non-portfolio modes, seed_company will be set to benchmark_label later
+        seed_company = None  # Will be set after benchmark selection
 
     # ── MODE 1: Portfolio Benchmark ────────────────────────────────────────
     if scout_mode == "portfolio":
@@ -462,27 +471,103 @@ with st.sidebar:
     elif scout_mode == "mena_success":
         st.caption("*Select proven MENA companies — find earlier-stage startups solving similar problems*")
         
-        # Multi-select for benchmark companies
-        selected_benchmarks = st.multiselect(
-            "Benchmark MENA companies:",
-            options=list(BENCHMARK_MENA_STARTUPS.keys()),
-            default=[list(BENCHMARK_MENA_STARTUPS.keys())[0]],
-            help="Select one or more successful MENA companies as templates.",
-        )
+        # Option to add custom company
+        use_custom_company = st.checkbox("➕ Add a custom company (not in list)", value=False)
         
-        if not selected_benchmarks:
-            st.warning("Please select at least one benchmark company.")
-            selected_benchmarks = [list(BENCHMARK_MENA_STARTUPS.keys())[0]]
-        
-        benchmark_label = ", ".join(selected_benchmarks)
-        
-        # Show info for each selected benchmark
-        for bm_name in selected_benchmarks:
-            bm_info = BENCHMARK_MENA_STARTUPS[bm_name]
-            st.info(
-                f"**{bm_name}** — {bm_info.get('achieved_stage', 'N/A')}\n\n"
-                f"{bm_info.get('description', '')}"
+        if use_custom_company:
+            # Custom company entry
+            st.info("📝 **Add a custom benchmark company** — Please fill in all fields for accurate similarity search.")
+            
+            custom_company_name = st.text_input("Company name:", placeholder="e.g., Careem, Souq, Noon")
+            
+            if custom_company_name:
+                # Initialize session state for custom company
+                if f"custom_bm_{custom_company_name}" not in st.session_state:
+                    st.session_state[f"custom_bm_{custom_company_name}"] = {
+                        "description": "",
+                        "problem_statement": "",
+                        "target_clients": "",
+                        "industry_vertical": "",
+                        "technology": "",
+                        "location": "MENA",
+                        "company_size": "",
+                    }
+                
+                custom_bm = st.session_state[f"custom_bm_{custom_company_name}"]
+                
+                with st.expander("📝 Fill in company details (required for similarity search)", expanded=True):
+                    custom_bm["description"] = st.text_area(
+                        "Description:", value=custom_bm["description"], height=60,
+                        placeholder="One-line description of what the company does"
+                    )
+                    custom_bm["problem_statement"] = st.text_area(
+                        "Problem Statement:", value=custom_bm["problem_statement"], height=60,
+                        placeholder="What pain point does this company solve?"
+                    )
+                    custom_bm["target_clients"] = st.text_input(
+                        "Target Clients:", value=custom_bm["target_clients"],
+                        placeholder="B2B: enterprises, SMBs / B2C: consumers"
+                    )
+                    custom_bm["industry_vertical"] = st.text_input(
+                        "Industry/Sector:", value=custom_bm["industry_vertical"],
+                        placeholder="e.g., Fintech, HealthTech, E-commerce"
+                    )
+                    custom_bm["technology"] = st.text_area(
+                        "Technology:", value=custom_bm["technology"], height=60,
+                        placeholder="Key technologies, AI, APIs, platforms used"
+                    )
+                    custom_bm["location"] = st.text_input(
+                        "Location:", value=custom_bm["location"],
+                        placeholder="e.g., UAE / Saudi Arabia / GCC"
+                    )
+                    custom_bm["company_size"] = st.text_input(
+                        "Company Size/Stage:", value=custom_bm["company_size"],
+                        placeholder="e.g., Series C, 500+ employees"
+                    )
+                    
+                    st.session_state[f"custom_bm_{custom_company_name}"] = custom_bm
+                
+                # Validate required fields
+                required_fields = ["description", "problem_statement", "industry_vertical", "technology"]
+                missing_fields = [f for f in required_fields if not custom_bm.get(f)]
+                
+                if missing_fields:
+                    st.warning(f"⚠️ Please fill in: {', '.join(missing_fields)} for accurate similarity search.")
+                else:
+                    st.success(f"✅ **{custom_company_name}** is ready for similarity search!")
+                
+                selected_benchmarks = [custom_company_name]
+                benchmark_label = custom_company_name
+                bm_data = dict(custom_bm)
+                custom_attrs = dict(bm_data)
+            else:
+                st.warning("Please enter a company name.")
+                selected_benchmarks = [list(BENCHMARK_MENA_STARTUPS.keys())[0]]
+                benchmark_label = selected_benchmarks[0]
+                bm_data = dict(BENCHMARK_MENA_STARTUPS[selected_benchmarks[0]])
+                custom_attrs = dict(bm_data)
+        else:
+            # Multi-select for benchmark companies (existing flow)
+            selected_benchmarks = st.multiselect(
+                "Benchmark MENA companies:",
+                options=list(BENCHMARK_MENA_STARTUPS.keys()),
+                default=[list(BENCHMARK_MENA_STARTUPS.keys())[0]],
+                help="Select one or more successful MENA companies as templates.",
             )
+            
+            if not selected_benchmarks:
+                st.warning("Please select at least one benchmark company.")
+                selected_benchmarks = [list(BENCHMARK_MENA_STARTUPS.keys())[0]]
+            
+            benchmark_label = ", ".join(selected_benchmarks)
+            
+            # Show info for each selected benchmark
+            for bm_name in selected_benchmarks:
+                bm_info = BENCHMARK_MENA_STARTUPS[bm_name]
+                st.info(
+                    f"**{bm_name}** — {bm_info.get('achieved_stage', 'N/A')}\n\n"
+                    f"{bm_info.get('description', '')}"
+                )
         
         target_stage = st.selectbox(
             "Find companies at or below stage:",
@@ -491,30 +576,38 @@ with st.sidebar:
             help="Alpha Scout targets companies earlier than this funding stage.",
         )
         
-        # Merge attributes from all selected benchmarks
-        # Uses the first selected company as base, enriches with others
-        bm_data = dict(BENCHMARK_MENA_STARTUPS[selected_benchmarks[0]])
-        if len(selected_benchmarks) > 1:
-            # Combine problem statements, target clients, etc. from all selected
-            for key in ["problem_statement", "target_clients", "industry_vertical", "technology"]:
-                combined = "; ".join([
-                    BENCHMARK_MENA_STARTUPS[bm].get(key, "") 
-                    for bm in selected_benchmarks if BENCHMARK_MENA_STARTUPS[bm].get(key)
-                ])
-                bm_data[key] = combined
-        
         # Override company_size to guide the search toward earlier-stage companies
         stage_hint = {
             "Before Series A": "pre-seed or seed stage, early traction only",
             "Before Series B": "pre-seed, seed, or Series A — early growth stage",
             "Before Series C": "seed to Series B — proven model, pre-scale",
         }
-        custom_attrs = dict(bm_data)
+        
+        # Only merge from predefined benchmarks if NOT using custom company
+        if not use_custom_company:
+            # Merge attributes from all selected benchmarks
+            # Uses the first selected company as base, enriches with others
+            bm_data = dict(BENCHMARK_MENA_STARTUPS[selected_benchmarks[0]])
+            if len(selected_benchmarks) > 1:
+                # Combine problem statements, target clients, etc. from all selected
+                for key in ["problem_statement", "target_clients", "industry_vertical", "technology"]:
+                    combined = "; ".join([
+                        BENCHMARK_MENA_STARTUPS[bm].get(key, "") 
+                        for bm in selected_benchmarks if BENCHMARK_MENA_STARTUPS[bm].get(key)
+                    ])
+                    bm_data[key] = combined
+            custom_attrs = dict(bm_data)
+        
+        # Add stage hint to custom_attrs
         custom_attrs["company_size"] = stage_hint[target_stage]
+        
+        # Set seed_company to the selected benchmark for reports
+        seed_company = benchmark_label
 
     # ── MODE 3: Inbound Candidates ─────────────────────────────────────────
     elif scout_mode == "inbound":
         benchmark_label = "Inbound Candidates"
+        seed_company = "Inbound Candidates"  # For reports
         inbound_source = st.radio(
             "Candidate source:",
             options=["demo", "websites", "pitchdeck"],
@@ -733,6 +826,38 @@ with st.sidebar:
             all_exclusions = preset_excl + custom_excl + stage_excl
             if all_exclusions:
                 st.info(f"**Active exclusions:** {', '.join(all_exclusions[:8])}{'...' if len(all_exclusions) > 8 else ''}")
+        
+        with st.expander("🏭 Industry Exclusion Filter"):
+            st.caption("*Exclude companies in specific industries/sectors*")
+            excluded_industries_text = st.text_area(
+                "Industries to exclude (one per line):",
+                value="",
+                height=80,
+                placeholder="e.g., Gambling\nCrypto\nAdult content\nTobacco",
+                help="Companies in these industries will be filtered out after search"
+            )
+            excluded_industries = [i.strip().lower() for i in excluded_industries_text.split("\n") if i.strip()]
+            if excluded_industries:
+                st.warning(f"**Excluding industries:** {', '.join(excluded_industries)}")
+    else:
+        # Inbound mode: still allow industry exclusion
+        excluded_industries = []
+    
+    # Global industry exclusion for ALL modes (including inbound)
+    if scout_mode == "inbound":
+        with st.expander("🏭 Industry Exclusion Filter"):
+            st.caption("*Exclude companies in specific industries/sectors*")
+            excluded_industries_text = st.text_area(
+                "Industries to exclude (one per line):",
+                value="",
+                height=80,
+                placeholder="e.g., Gambling\nCrypto\nAdult content\nTobacco",
+                help="Companies in these industries will be filtered out",
+                key="inbound_industry_exclusion"
+            )
+            excluded_industries = [i.strip().lower() for i in excluded_industries_text.split("\n") if i.strip()]
+            if excluded_industries:
+                st.warning(f"**Excluding industries:** {', '.join(excluded_industries)}")
 
     st.divider()
 
@@ -1056,7 +1181,19 @@ if search_button:
                     exclude_companies=all_excluded_companies,  # Exclude specific companies
                 )
                 
-                # Enrichment: Website/LinkedIn verification + Stage verification + Website content
+                # Step 1: Apply industry exclusion filter
+                if excluded_industries and results:
+                    st.write(f"🏭 Filtering by industry exclusions...")
+                    before_count = len(results)
+                    results = [
+                        r for r in results 
+                        if not any(excl in r.sector.lower() for excl in excluded_industries)
+                    ]
+                    excluded_by_industry = before_count - len(results)
+                    if excluded_by_industry > 0:
+                        st.write(f"⚠️ Excluded {excluded_by_industry} companies by industry filter")
+                
+                # Step 2: Enrichment - Website/LinkedIn verification + Stage verification
                 filtered_out_companies = []
                 enrichments = {}
                 if enrich_with_linkedin and results:
@@ -1132,44 +1269,57 @@ if search_button:
                             results.append(r)
 
                 if results:
-                    # Apply same enrichment as other modes (website, LinkedIn, stage)
-                    filtered_out_companies = []
-                    enrichments = {}
-                    if enrich_with_linkedin:
-                        st.write("🔗 Enriching with website, LinkedIn, and funding data...")
-                        
-                        # Create trace for Langfuse evaluation with user/session tracking
-                        enrichment_trace = create_trace(
-                            name="source_enrichment",
-                            input_data={"company_count": len(results), "source": inbound_source},
-                            metadata={"mode": "inbound"},
-                            user_id=st.session_state.langfuse_user_id,
-                            session_id=st.session_state.langfuse_session_id,
-                        )
-                        trace_id = enrichment_trace.id if enrichment_trace else None
-                        
-                        results, filtered_out_companies, enrichments = enrich_search_results(
-                            results,
-                            max_employees=max_employees if enable_size_filter else 9999,
-                            mena_only=mena_only,
-                            early_stage_only=early_stage_only,
-                        )
-                        
-                        # Run Langfuse evaluations
-                        if enrichments:
-                            st.write("📊 Evaluating enrichment quality...")
-                            metrics = evaluate_enrichment_batch(trace_id, enrichments, results)
-                            st.session_state.enrichment_metrics = metrics
-                        
-                        if filtered_out_companies:
-                            filter_reasons = []
-                            if enable_size_filter:
-                                filter_reasons.append(f">{max_employees} employees")
-                            if mena_only:
-                                filter_reasons.append("non-MENA HQ")
-                            if early_stage_only:
-                                filter_reasons.append("later than Series B")
-                            st.write(f"⚠️ Filtered out {len(filtered_out_companies)} companies ({', '.join(filter_reasons)})")
+                    # Step 1: Apply industry exclusion filter first
+                    if excluded_industries:
+                        st.write(f"🏭 Filtering by industry exclusions...")
+                        before_count = len(results)
+                        results = [
+                            r for r in results 
+                            if not any(excl in r.sector.lower() for excl in excluded_industries)
+                        ]
+                        excluded_by_industry = before_count - len(results)
+                        if excluded_by_industry > 0:
+                            st.write(f"⚠️ Excluded {excluded_by_industry} companies by industry filter")
+                    
+                    # Step 2: ALWAYS verify via website and LinkedIn (core for inbound)
+                    # Use data from documents first, then verify/enrich via external sources
+                    st.write("🔗 Verifying via website and LinkedIn...")
+                    
+                    # Create trace for Langfuse evaluation with user/session tracking
+                    enrichment_trace = create_trace(
+                        name="source_enrichment",
+                        input_data={"company_count": len(results), "source": inbound_source},
+                        metadata={"mode": "inbound"},
+                        user_id=st.session_state.langfuse_user_id,
+                        session_id=st.session_state.langfuse_session_id,
+                    )
+                    trace_id = enrichment_trace.id if enrichment_trace else None
+                    
+                    # Enrich and verify - this fills in missing data from website/LinkedIn
+                    # If location/stage/employees found in documents, they're preserved
+                    # If not found, enrichment will try to get them from external sources
+                    results, filtered_out_companies, enrichments = enrich_search_results(
+                        results,
+                        max_employees=max_employees if enable_size_filter else 9999,
+                        mena_only=mena_only,
+                        early_stage_only=early_stage_only,
+                    )
+                    
+                    # Run Langfuse evaluations
+                    if enrichments:
+                        st.write("📊 Evaluating enrichment quality...")
+                        metrics = evaluate_enrichment_batch(trace_id, enrichments, results)
+                        st.session_state.enrichment_metrics = metrics
+                    
+                    if filtered_out_companies:
+                        filter_reasons = []
+                        if enable_size_filter:
+                            filter_reasons.append(f">{max_employees} employees")
+                        if mena_only:
+                            filter_reasons.append("non-MENA HQ")
+                        if early_stage_only:
+                            filter_reasons.append("later than Series B")
+                        st.write(f"⚠️ Filtered out {len(filtered_out_companies)} companies ({', '.join(filter_reasons)})")
                     
                     st.session_state.search_results = results
                     st.session_state.filtered_out = filtered_out_companies

@@ -41,13 +41,13 @@ def generate_markdown_table(
     """
     # Header - now includes grounded employee count and funding stage
     md = f"## Comparison: {seed_company} vs. Similar Companies\n\n"
-    md += "| Company | 👥 Employees | 🚀 Stage | 📍 Location | Sector | Offer | Tech | Sales | Founder | Website |\n"
-    md += "|---------|-------------|----------|-------------|--------|-------|------|-------|---------|--------|\n"
+    md += "| Company | 👥 Employees | 🚀 Stage | 📍 Location | Sector | 🔗 Why Similar | Offer | Tech | Sales | Founder | Website |\n"
+    md += "|---------|-------------|----------|-------------|--------|----------------|-------|------|-------|---------|--------|\n"
 
     # Seed company row (from config)
     seed_data = PORTFOLIO_COMPANIES.get(seed_company, {})
     md += f"| **{seed_company}** (Seed) | — | — | {seed_data.get('location', 'N/A')} | "
-    md += f"{seed_data.get('sector', 'N/A')} | — | — | — | — | "
+    md += f"{seed_data.get('sector', seed_data.get('industry_vertical', 'N/A'))} | *Benchmark* | — | — | — | — | "
     md += f"[Link]({seed_data.get('website', '#')}) |\n"
 
     # Target company rows
@@ -92,7 +92,12 @@ def generate_markdown_table(
         if len(location) > 20:
             location = location[:18] + "..."
 
-        md += f"| {sr.name} | {emp_str} | {stage_str} | {location} | {sr.sector} | "
+        # Similarity reason - truncate if too long
+        similarity = getattr(sr, 'similarity_reason', '') or "—"
+        if len(similarity) > 40:
+            similarity = similarity[:38] + "..."
+        
+        md += f"| {sr.name} | {emp_str} | {stage_str} | {location} | {sr.sector} | {similarity} | "
         md += f"{offer_str} | {tech_str} | {sales_str} | {founder_str} | {website_link} |\n"
 
     # Add detailed evidence section below the table

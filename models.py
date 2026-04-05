@@ -39,6 +39,7 @@ class SearchResult:
     founders_linkedin: List[str] = field(default_factory=list) # LinkedIn URLs
     funding_stage: str = "Not Found"        # Seed, Series A, etc.
     funding_amount: str = "Not Found"       # "$2M", "Undisclosed", etc.
+    employee_count: str = "Not Found"       # Number of employees (from document or enrichment)
     
     # Grounding evidence — deterministic proof for each field
     # Maps field name -> GroundedEvidence object
@@ -48,6 +49,9 @@ class SearchResult:
     website_verified: bool = False          # True if website was verified via HTTP fetch
     source_date: str = ""                   # Publication date of source (for recency filtering)
     source_age_days: int = -1               # Age of source in days (-1 = unknown)
+    
+    # Similarity explanation — why this company matches the benchmark
+    similarity_reason: str = ""             # e.g., "Similar problem statement (BNPL), same industry (Fintech)"
 
     def to_dict(self) -> Dict:
         """Convert to dict for JSON serialization / Streamlit display."""
@@ -69,6 +73,8 @@ class SearchResult:
             },
             "grounding_score": self.grounding_score,
             "website_verified": self.website_verified,
+            "similarity_reason": self.similarity_reason,
+            "employee_count": self.employee_count,
             "source_date": self.source_date,
             "source_age_days": self.source_age_days,
         }
