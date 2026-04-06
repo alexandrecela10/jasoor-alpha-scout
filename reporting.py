@@ -368,6 +368,7 @@ def send_email_report(
     top_n: int = 3,
     attach_pdf: bool = True,
     share_id: str = None,
+    app_url: str = None,
 ) -> tuple[bool, str]:
     """
     Send the report via email (SMTP).
@@ -379,6 +380,7 @@ def send_email_report(
     
     Args:
         share_id: Optional share ID to include in email for direct access to results
+        app_url: Base URL of the deployed app (e.g., "https://alpha-scout.streamlit.app")
     
     Returns tuple of (success: bool, message: str)
     """
@@ -407,11 +409,26 @@ def send_email_report(
 Companies similar to {seed_company}
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
 """
-        # Include Share ID for direct access
+        # Include Share ID and clickable link for direct access
         if share_id:
-            body += f"""
+            # Build shareable URL if app_url is provided
+            if app_url:
+                share_url = f"{app_url.rstrip('/')}/?share_id={share_id}"
+                body += f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔗 QUICK ACCESS: Share ID {share_id}
+🔗 VIEW FULL RESULTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Click here to view the complete search results:
+{share_url}
+
+Or manually enter Share ID: {share_id}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+            else:
+                # Fallback if no app URL configured
+                body += f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔗 VIEW FULL RESULTS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 To view full results in Alpha Scout:
 1. Open Alpha Scout

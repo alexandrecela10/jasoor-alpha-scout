@@ -88,6 +88,25 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
+# Auto-load search from URL query parameter (for email links)
+# ---------------------------------------------------------------------------
+if "auto_loaded_share_id" not in st.session_state:
+    st.session_state.auto_loaded_share_id = None
+
+query_params = st.query_params
+if "share_id" in query_params and st.session_state.auto_loaded_share_id != query_params["share_id"]:
+    share_id = query_params["share_id"]
+    logger.info(f"Auto-loading search from URL: share_id={share_id}")
+    loaded = load_search_by_share_id(share_id)
+    if loaded:
+        st.session_state.search_results = loaded["search_results"]
+        st.session_state.scored_companies = loaded["scored_companies"]
+        st.session_state.auto_loaded_share_id = share_id
+        st.success(f"✅ Loaded search: {loaded['metadata']['benchmark_label']}")
+    else:
+        st.error(f"❌ Share ID not found: {share_id}")
+
+# ---------------------------------------------------------------------------
 # Jasoor Brand Styling
 # ---------------------------------------------------------------------------
 # Colors from jasoor.vc: deep navy background, mint/teal accent
@@ -1193,11 +1212,21 @@ with st.sidebar:
             if st.button("📧 Send Email", use_container_width=True):
                 if email_to:
                     with st.spinner("Sending..."):
+                        # Get app URL from environment or use default
+                        app_url = os.environ.get("APP_URL", "http://localhost:8501")
+                        
+                        # Get share_id from last saved search
+                        share_id = None
+                        if hasattr(st.session_state, 'last_search_metadata'):
+                            share_id = st.session_state.last_search_metadata.get('share_id')
+                        
                         success, message = send_email_report(
                             email_to,
                             benchmark_label,
                             st.session_state.scored_companies,
                             top_n=3,
+                            share_id=share_id,
+                            app_url=app_url,
                         )
                         if success:
                             st.success(message)
@@ -1476,6 +1505,7 @@ if search_button:
             # save_search now returns {"search_id": int, "share_id": str}
             st.session_state.current_search_id = save_result["search_id"]
             st.session_state.current_share_id = save_result["share_id"]
+            st.session_state.last_search_metadata = save_result  # Store for email function
             st.session_state.show_save_nudge = True
             st.toast(f"💾 Results saved — Share ID: `{save_result['share_id']}`")
         except Exception as e:
